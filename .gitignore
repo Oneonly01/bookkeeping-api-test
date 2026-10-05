@@ -1,0 +1,24 @@
+# Python
+__pycache__/
+*.py[cod]
+
+# Virtual environment
+.venv/
+
+# Pytest
+.pytest_cache/
+
+# Allure
+allure-results/
+allure-report/
+
+# Logs
+logs/
+*.log
+
+# IDE
+.vscode/
+.idea/
+
+# Local sensitive config
+config/config.local.yaml
