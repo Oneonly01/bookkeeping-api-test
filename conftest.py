@@ -1,9 +1,11 @@
 import pytest
 from common.account_api import AccountApi
 from common.auth_api import AuthApi
+from common.category_api import CategoryApi
 from common.request import RequestClient
+from common.transaction_api import TransactionApi
 from utils.config import Config
-from utils.data_factory import AccountDataFactory
+from utils.data_factory import AccountDataFactory, TransactionDataFactory
 
 
 @pytest.fixture(scope="session")
@@ -948,3 +950,304 @@ def fresh_auth_context(
         "access_token": access_token_value,
         "refresh_token": refresh_token_value,
     }
+
+
+@pytest.fixture(scope="session")
+def transaction_api(
+    auth_client,
+    config,
+):
+    """
+    提供账单模块 API 对象。
+
+    主要作用：
+
+    1. 统一调用账单模块接口；
+    2. 自动复用已经完成 JWT 鉴权的 auth_client；
+    3. 测试用例中不再重复拼接 URL。
+
+    后续账单测试统一使用：
+
+    transaction_api
+    """
+
+    return TransactionApi(
+        client=auth_client,
+        api_prefix=config.api_prefix,
+    )
+
+
+@pytest.fixture(scope="session")
+def transaction_factory():
+    """
+    提供账单测试数据工厂。
+
+    后续测试中可以直接使用：
+
+    transaction_factory.build_expense(...)
+
+    或：
+
+    transaction_factory.build_income(...)
+
+    避免每条账单测试都重复编写 payload。
+    """
+
+    return TransactionDataFactory
+
+
+@pytest.fixture(scope="session")
+def category_api(
+    auth_client,
+    config,
+):
+    """
+    提供分类模块 API 对象。
+
+    账单模块需要 category_id，
+    所以后续 transaction fixture
+    会通过这个对象创建测试分类。
+    """
+
+    return CategoryApi(
+        client=auth_client,
+        api_prefix=config.api_prefix,
+    )
+
+
+@pytest.fixture
+def transaction_context(
+    account_api,
+    account_factory,
+    category_api,
+):
+    """
+    创建账单测试所需要的基础数据。
+
+    当前 fixture 会自动准备：
+
+    1. 一个测试账户；
+    2. 一个支出分类；
+    3. 一个收入分类。
+
+    测试方法可以直接使用：
+
+    transaction_context["account"]
+    transaction_context["expense_category"]
+    transaction_context["income_category"]
+
+    主要用于：
+
+    1. 新增支出账单；
+    2. 新增收入账单；
+    3. 修改账单；
+    4. 删除账单；
+    5. 列表查询；
+    6. 分类筛选；
+    7. 统计接口。
+
+    测试结束后会自动清理：
+
+    1. 测试账户；
+    2. 测试分类。
+
+    注意：
+
+    当前账户初始余额使用 5000.00，
+
+    这样后续进行支出测试时，
+    不容易因为余额不足导致测试失败。
+    """
+
+    # ======================================
+    # 创建测试账户数据
+    # ======================================
+
+    account_payload = account_factory.build_account_with_balance(
+        "5000.00",
+        note="账单模块自动化测试账户",
+    )
+
+    # ======================================
+    # 创建测试账户
+    # ======================================
+
+    account_response = account_api.create_account(account_payload)
+
+    # ======================================
+    # 测试账户创建断言
+    # ======================================
+
+    assert account_response.status_code == 200, (
+        f"创建账单测试账户失败，"
+        f"status_code="
+        f"{account_response.status_code}，"
+        f"response={account_response.text}"
+    )
+
+    account_response_data = account_response.json()
+
+    assert account_response_data.get("code") == 200, (
+        f"创建账单测试账户业务失败：" f"{account_response_data}"
+    )
+
+    # ======================================
+    # 获取账户数据
+    # ======================================
+
+    account_data = account_response_data.get(
+        "data",
+        {},
+    )
+
+    account_id = account_data.get("id")
+
+    assert account_id, (
+        f"创建账单测试账户后" f"未返回账户 ID：" f"{account_response_data}"
+    )
+
+    # ======================================
+    # 构造支出分类
+    # ======================================
+    #
+    # 这里先按照常见字段：
+    #
+    # name
+    # category_type
+    #
+    # 如果你的分类接口字段不同，
+    # 根据实际接口响应再调整。
+    #
+    # ======================================
+
+    expense_payload = {
+        "name": "自动化支出分类",
+        "category_type": "expense",
+    }
+
+    # ======================================
+    # 创建支出分类
+    # ======================================
+
+    expense_response = category_api.create_category(expense_payload)
+
+    assert expense_response.status_code == 200, (
+        f"创建支出分类失败，"
+        f"status_code="
+        f"{expense_response.status_code}，"
+        f"response={expense_response.text}"
+    )
+
+    expense_response_data = expense_response.json()
+
+    assert expense_response_data.get("code") == 200, (
+        f"创建支出分类业务失败：" f"{expense_response_data}"
+    )
+
+    expense_category = expense_response_data.get(
+        "data",
+        {},
+    )
+
+    expense_category_id = expense_category.get("id")
+
+    assert expense_category_id
+
+    # ======================================
+    # 构造收入分类
+    # ======================================
+
+    income_payload = {
+        "name": "自动化收入分类",
+        "category_type": "income",
+    }
+
+    # ======================================
+    # 创建收入分类
+    # ======================================
+
+    income_response = category_api.create_category(income_payload)
+
+    assert income_response.status_code == 200, (
+        f"创建收入分类失败，"
+        f"status_code="
+        f"{income_response.status_code}，"
+        f"response={income_response.text}"
+    )
+
+    income_response_data = income_response.json()
+
+    assert income_response_data.get("code") == 200, (
+        f"创建收入分类业务失败：" f"{income_response_data}"
+    )
+
+    income_category = income_response_data.get(
+        "data",
+        {},
+    )
+
+    income_category_id = income_category.get("id")
+
+    assert income_category_id
+
+    # ======================================
+    # 返回测试上下文
+    # ======================================
+
+    yield {
+        "account": account_data,
+        "expense_category": expense_category,
+        "income_category": income_category,
+    }
+
+    # ======================================
+    # 清理测试账户
+    # ======================================
+    #
+    # 删除账户前先统一将余额归零。
+    #
+    # ======================================
+
+    try:
+        account_api.adjust_balance(
+            account_id,
+            {
+                "balance": "0.00",
+                "note": "账单模块测试数据清理",
+            },
+        )
+
+        account_api.delete_account(account_id)
+
+    except Exception as exc:
+        print(f"账单测试账户清理失败，" f"account_id={account_id}，" f"error={exc}")
+
+    # ======================================
+    # 清理支出分类
+    # ======================================
+
+    try:
+        category_api.delete_category(expense_category_id)
+
+    except Exception as exc:
+        print(
+            f"支出分类清理失败，"
+            f"category_id="
+            f"{expense_category_id}，"
+            f"error={exc}"
+        )
+
+    # ======================================
+    # 清理收入分类
+    # ======================================
+
+    try:
+        category_api.delete_category(income_category_id)
+
+    except Exception as exc:
+        print(
+            f"收入分类清理失败，"
+            f"category_id="
+            f"{income_category_id}，"
+            f"error={exc}"
+        )

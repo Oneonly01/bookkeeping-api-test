@@ -1,4 +1,5 @@
 import uuid
+from datetime import datetime
 
 
 class AccountDataFactory:
@@ -244,5 +245,253 @@ class AccountDataFactory:
 
         return cls.build_account(
             initial_balance=balance,
+            **kwargs,
+        )
+
+
+class TransactionDataFactory:
+    """
+    账单模块测试数据工厂。
+
+    主要作用：
+
+    1. 统一生成账单测试数据；
+    2. 避免测试用例重复编写 payload；
+    3. 支持收入 / 支出不同场景；
+    4. 自动生成唯一备注；
+    5. 后续接口字段变化时集中维护。
+
+    当前计划支持：
+
+    1. 支出账单；
+    2. 收入账单；
+    3. 指定金额；
+    4. 指定账户；
+    5. 指定分类；
+    6. 指定交易时间；
+    7. 指定备注；
+    8. 指定标签。
+    """
+
+    # ==========================================
+    # 默认测试数据
+    # ==========================================
+
+    DEFAULT_EXPENSE_AMOUNT = "100.00"
+
+    DEFAULT_INCOME_AMOUNT = "500.00"
+
+    DEFAULT_TRANSACTION_TYPE_EXPENSE = "expense"
+
+    DEFAULT_TRANSACTION_TYPE_INCOME = "income"
+
+    DEFAULT_NOTE_PREFIX = "pytest自动化账单"
+
+    # ==========================================
+    # 生成唯一备注
+    # ==========================================
+
+    @staticmethod
+    def generate_note(
+        prefix: str = DEFAULT_NOTE_PREFIX,
+    ) -> str:
+        """
+        生成唯一账单备注。
+
+        为什么需要唯一备注：
+
+        1. 方便在账单列表中定位当前测试数据；
+        2. 避免依赖列表排序；
+        3. 后续搜索测试可以直接复用；
+        4. 多次执行自动化测试时不容易混淆。
+
+        示例：
+
+        pytest自动化账单_a1b2c3d4
+        """
+
+        random_suffix = uuid.uuid4().hex[:8]
+
+        return f"{prefix}_" f"{random_suffix}"
+
+    # ==========================================
+    # 生成交易时间
+    # ==========================================
+
+    @staticmethod
+    def generate_transaction_time() -> str:
+        """
+        生成当前交易时间。
+
+        返回格式：
+
+        YYYY-MM-DD HH:MM:SS
+
+        例如：
+
+        2026-10-09 21:30:00
+        """
+
+        return datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+
+    # ==========================================
+    # 构造通用账单数据
+    # ==========================================
+
+    @classmethod
+    def build_transaction(
+        cls,
+        account_id: int,
+        category_id: int,
+        transaction_type: str,
+        amount: str,
+        transaction_time: str | None = None,
+        note: str | None = None,
+        tag_ids: list | None = None,
+        **kwargs,
+    ) -> dict:
+        """
+        构造通用账单请求数据。
+
+        参数说明：
+
+        account_id：
+            账单所属账户 ID。
+
+        category_id：
+            账单所属分类 ID。
+
+        transaction_type：
+            账单类型。
+
+            当前计划：
+
+            expense：
+                支出
+
+            income：
+                收入
+
+        amount：
+            账单金额。
+
+        transaction_time：
+            交易时间。
+
+            如果不传，
+            自动使用当前时间。
+
+        note：
+            账单备注。
+
+            如果不传，
+            自动生成唯一备注。
+
+        tag_ids：
+            标签 ID 列表。
+
+            如果不传，
+            默认不添加标签。
+
+        **kwargs：
+            后续用于扩展其他账单字段。
+        """
+
+        # ======================================
+        # 构造基础 payload
+        # ======================================
+
+        payload = {
+            "account_id": account_id,
+            "category_id": category_id,
+            "transaction_type": transaction_type,
+            "amount": amount,
+            "transaction_time": (transaction_time or cls.generate_transaction_time()),
+            "note": (note or cls.generate_note()),
+        }
+
+        # ======================================
+        # 添加标签
+        # ======================================
+        #
+        # tag_ids 是可选字段。
+        #
+        # 如果没有传，
+        # 不主动添加到 payload，
+        # 避免和后端字段默认值产生冲突。
+        #
+        # ======================================
+
+        if tag_ids is not None:
+            payload["tag_ids"] = tag_ids
+
+        # ======================================
+        # 添加额外字段
+        # ======================================
+
+        payload.update(kwargs)
+
+        return payload
+
+    # ==========================================
+    # 构造支出账单
+    # ==========================================
+
+    @classmethod
+    def build_expense(
+        cls,
+        account_id: int,
+        category_id: int,
+        amount: str | None = None,
+        **kwargs,
+    ) -> dict:
+        """
+        构造支出账单。
+
+        默认金额：
+
+        100.00
+
+        示例：
+
+        TransactionDataFactory.build_expense(
+            account_id=1,
+            category_id=2,
+        )
+        """
+
+        return cls.build_transaction(
+            account_id=account_id,
+            category_id=category_id,
+            transaction_type=(cls.DEFAULT_TRANSACTION_TYPE_EXPENSE),
+            amount=(amount if amount is not None else cls.DEFAULT_EXPENSE_AMOUNT),
+            **kwargs,
+        )
+
+    # ==========================================
+    # 构造收入账单
+    # ==========================================
+
+    @classmethod
+    def build_income(
+        cls,
+        account_id: int,
+        category_id: int,
+        amount: str | None = None,
+        **kwargs,
+    ) -> dict:
+        """
+        构造收入账单。
+
+        默认金额：
+
+        500.00
+        """
+
+        return cls.build_transaction(
+            account_id=account_id,
+            category_id=category_id,
+            transaction_type=(cls.DEFAULT_TRANSACTION_TYPE_INCOME),
+            amount=(amount if amount is not None else cls.DEFAULT_INCOME_AMOUNT),
             **kwargs,
         )
