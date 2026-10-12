@@ -1,11 +1,20 @@
 import pytest
 from common.account_api import AccountApi
 from common.auth_api import AuthApi
+from common.budget_api import BudgetApi
 from common.category_api import CategoryApi
-from common.request import RequestClient
+from common.saving_api import SavingApi
+from utils.request import RequestClient
+from common.tag_api import TagApi
 from common.transaction_api import TransactionApi
 from utils.config import Config
-from utils.data_factory import AccountDataFactory, TransactionDataFactory
+from utils.data_factory import (
+    AccountDataFactory,
+    BudgetDataFactory,
+    SavingDataFactory,
+    TagDataFactory,
+    TransactionDataFactory,
+)
 
 
 @pytest.fixture(scope="session")
@@ -1251,3 +1260,78 @@ def transaction_context(
             f"{income_category_id}，"
             f"error={exc}"
         )
+
+
+@pytest.fixture(scope="session")
+def tag_api(
+    auth_client,
+    config,
+):
+    """
+    标签 API fixture。
+
+    使用已经完成登录认证的 auth_client，
+    后续标签相关测试可以直接调用。
+    """
+
+    return TagApi(
+        client=auth_client,
+        api_prefix=config.api_prefix,
+    )
+
+
+@pytest.fixture(scope="session")
+def tag_factory():
+    """
+    标签测试数据工厂。
+    """
+
+    return TagDataFactory
+
+
+@pytest.fixture(scope="session")
+def budget_api(
+    auth_client,
+    config,
+):
+    """
+    预算 API fixture。
+    """
+
+    return BudgetApi(
+        client=auth_client,
+        api_prefix=config.api_prefix,
+    )
+
+
+@pytest.fixture(scope="session")
+def budget_factory():
+    """
+    预算测试数据工厂。
+    """
+
+    return BudgetDataFactory
+
+
+@pytest.fixture(scope="session")
+def saving_api(
+    auth_client,
+    config,
+):
+    """
+    目标储蓄 API fixture。
+    """
+
+    return SavingApi(
+        client=auth_client,
+        api_prefix=config.api_prefix,
+    )
+
+
+@pytest.fixture(scope="session")
+def saving_factory():
+    """
+    目标储蓄测试数据工厂。
+    """
+
+    return SavingDataFactory

@@ -495,3 +495,236 @@ class TransactionDataFactory:
             amount=(amount if amount is not None else cls.DEFAULT_INCOME_AMOUNT),
             **kwargs,
         )
+
+
+class TagDataFactory:
+    """
+    标签测试数据工厂。
+
+    用于统一生成标签测试数据，
+    避免测试代码中重复写固定名称。
+    """
+
+    @staticmethod
+    def generate_tag_name(
+        prefix="自动化测试标签",
+    ):
+        """
+        生成唯一标签名称。
+
+        示例：
+
+        自动化测试标签_a1b2c3d4
+        """
+
+        return f"{prefix}_" f"{uuid.uuid4().hex[:8]}"
+
+    @classmethod
+    def build_tag(
+        cls,
+        name=None,
+        **kwargs,
+    ):
+        """
+        构造标签创建请求数据。
+        """
+
+        payload = {
+            "name": (name or cls.generate_tag_name()),
+        }
+
+        payload.update(kwargs)
+
+        return payload
+
+
+class BudgetDataFactory:
+    """
+    预算测试数据工厂。
+
+    根据后端预算创建接口实际字段构造测试数据。
+
+    budget_type：
+
+        overall
+            总预算
+
+        category
+            分类预算
+
+    必填字段：
+
+        budget_type
+        year
+        month
+        amount
+
+    条件必填：
+
+        category_id
+
+        当 budget_type=category 时使用。
+
+    可选字段：
+
+        alert_threshold
+        note
+    """
+
+    @classmethod
+    def build_budget(
+        cls,
+        budget_type="overall",
+        year=2027,
+        month=10,
+        amount="1000.00",
+        category_id=None,
+        alert_threshold=None,
+        note=None,
+        **kwargs,
+    ):
+        """
+        构造预算请求数据。
+
+        :param budget_type:
+            预算类型。
+
+            overall：
+                总预算
+
+            category：
+                分类预算
+
+        :param year:
+            预算年份。
+
+        :param month:
+            预算月份。
+
+        :param amount:
+            预算金额。
+
+        :param category_id:
+            分类 ID。
+
+            总预算时可以不传。
+
+            分类预算时必须传入有效
+            支出分类 ID。
+
+        :param alert_threshold:
+            预算提醒阈值。
+
+        :param note:
+            预算备注。
+        """
+
+        # ======================================
+        # 基础必填字段
+        # ======================================
+
+        payload = {
+            "budget_type": budget_type,
+            "year": year,
+            "month": month,
+            "amount": amount,
+        }
+
+        # ======================================
+        # 分类预算
+        # ======================================
+        #
+        # category_id 不是所有预算都需要。
+        #
+        # overall：
+        #     不发送 category_id
+        #
+        # category：
+        #     由测试用例传入 category_id
+        #
+        # ======================================
+
+        if category_id is not None:
+            payload["category_id"] = category_id
+
+        # ======================================
+        # 预算提醒阈值
+        # ======================================
+
+        if alert_threshold is not None:
+            payload["alert_threshold"] = alert_threshold
+
+        # ======================================
+        # 预算备注
+        # ======================================
+
+        if note is not None:
+            payload["note"] = note
+
+        # ======================================
+        # 支持测试用例覆盖或扩展字段
+        # ======================================
+
+        payload.update(kwargs)
+
+        return payload
+
+
+class SavingDataFactory:
+    """
+    目标储蓄测试数据工厂。
+    """
+
+    @staticmethod
+    def generate_saving_name(
+        prefix="自动化测试储蓄目标",
+    ):
+        """
+        生成唯一储蓄目标名称。
+        """
+
+        return f"{prefix}_" f"{uuid.uuid4().hex[:8]}"
+
+    @classmethod
+    def build_saving(
+        cls,
+        name=None,
+        target_amount="10000.00",
+        current_amount="0.00",
+        deadline=None,
+        **kwargs,
+    ):
+        """
+        构造储蓄目标请求数据。
+
+        当前先按最常见字段准备：
+
+        name
+        target_amount
+        current_amount
+        deadline
+
+        如果后端字段名称不同，
+        下一步根据真实接口返回调整。
+        """
+
+        payload = {
+            "name": (name or cls.generate_saving_name()),
+            "target_amount": target_amount,
+            "current_amount": current_amount,
+        }
+
+        # ======================================
+        # 截止日期
+        # ======================================
+
+        if deadline is not None:
+            payload["deadline"] = deadline
+
+        # ======================================
+        # 支持覆盖和扩展字段
+        # ======================================
+
+        payload.update(kwargs)
+
+        return payload

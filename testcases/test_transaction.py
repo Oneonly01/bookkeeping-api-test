@@ -1,4 +1,5 @@
 from decimal import Decimal
+from pathlib import Path
 import allure
 import pytest
 
@@ -6486,7 +6487,7 @@ class TestTransaction:
                     )
 
     @allure.story("账单统计")
-    @allure.title("获取账单年度统计成功")
+    @allure.title("账单年度统计成功")
     def test_transaction_yearly_statistics_success(
         self,
         transaction_api,
@@ -6494,34 +6495,63 @@ class TestTransaction:
         transaction_context,
     ):
         """
-        验证账单年度统计接口可以正常返回数据。
+        验证账单年度统计接口。
 
-        当前测试主要确认：
+        接口实际返回结构：
 
-        1. yearly-statistics 接口 HTTP 状态码；
-        2. 业务 code；
-        3. data 是否存在；
-        4. 年度统计真实返回结构；
-        5. 当前创建的收入、支出账单是否进入年度统计。
+        {
+            "code": 200,
+            "message": "获取年度统计成功",
+            "data": {
+                "year": 2026,
+                "total_income": "4900.00",
+                "total_expense": "755.80",
+                "total_balance": "4144.20",
+                "months": [
+                    {
+                        "month": 1,
+                        "month_text": "2026-01",
+                        "income": "0.00",
+                        "expense": "0.00",
+                        "balance": "0.00"
+                    },
+                    ...
+                ]
+            }
+        }
 
-        当前暂时不直接猜字段结构。
+        当前测试采用：
 
-        原因：
+            创建账单前查询年度统计
+                    ↓
+            记录年度和当前月份统计基线
+                    ↓
+            创建收入 500.00
+            创建支出 100.00
+                    ↓
+            再次查询年度统计
+                    ↓
+            验证年度总计和当前月份增量
 
-        前面的统计接口：
+        预期：
 
-        summary
-        trend
-        category-statistics
-        monthly-statistics
+            年度总收入：
+                +500.00
 
-        返回结构都不完全一致。
+            年度总支出：
+                +100.00
 
-        所以这里先创建明确数据，
-        再输出 yearly-statistics 的真实响应。
+            年度总余额：
+                +400.00
 
-        下一步根据真实结构，
-        再升级成正式的“基线 + 增量”测试。
+            当前月份收入：
+                +500.00
+
+            当前月份支出：
+                +100.00
+
+            当前月份余额：
+                +400.00
         """
 
         # ======================================
@@ -6564,12 +6594,7 @@ class TestTransaction:
         assert income_category_id, f"未获取到收入分类 ID：" f"{transaction_context}"
 
         # ======================================
-        # 构造年度统计支出账单
-        # ======================================
-        #
-        # 使用当前系统时间，
-        # 确保账单进入当前年度统计。
-        #
+        # 构造支出账单
         # ======================================
 
         expense_payload = transaction_factory.build_expense(
@@ -6580,7 +6605,7 @@ class TestTransaction:
         )
 
         # ======================================
-        # 构造年度统计收入账单
+        # 构造收入账单
         # ======================================
 
         income_payload = transaction_factory.build_income(
@@ -6588,6 +6613,208 @@ class TestTransaction:
             category_id=income_category_id,
             amount="500.00",
             note=(transaction_factory.generate_note("自动化测试-年度统计-收入")),
+        )
+
+        # ======================================
+        # 从账单时间中获取当前年月
+        # ======================================
+        #
+        # transaction_time：
+        #
+        # 2026-10-09 22:30:00
+        #
+        # current_year：
+        #
+        # 2026
+        #
+        # current_month：
+        #
+        # 10
+        #
+        # ======================================
+
+        transaction_time = expense_payload["transaction_time"]
+
+        current_year = int(transaction_time[:4])
+
+        current_month = int(transaction_time[5:7])
+
+        current_month_text = transaction_time[:7]
+
+        # ======================================
+        # 定义月份查找方法
+        # ======================================
+
+        def find_month_statistics(
+            months,
+            target_month,
+        ):
+            for item in months:
+
+                if item.get("month") == target_month:
+                    return item
+
+            return None
+
+        # ======================================
+        # 查询创建账单前的年度统计
+        # ======================================
+
+        before_response = transaction_api.get_yearly_statistics()
+
+        assert before_response.status_code == 200, (
+            f"查询创建账单前年度统计失败，"
+            f"status_code="
+            f"{before_response.status_code}，"
+            f"response="
+            f"{before_response.text}"
+        )
+
+        # ======================================
+        # 解析创建前响应
+        # ======================================
+
+        before_response_data = before_response.json()
+
+        assert before_response_data.get("code") == 200, (
+            f"查询创建账单前年度统计业务失败：" f"{before_response_data}"
+        )
+
+        # ======================================
+        # 获取创建前 data
+        # ======================================
+
+        before_data = before_response_data.get(
+            "data",
+            {},
+        )
+
+        assert isinstance(
+            before_data,
+            dict,
+        ), (
+            f"年度统计 data 结构错误：" f"{before_response_data}"
+        )
+
+        # ======================================
+        # 年份断言
+        # ======================================
+
+        assert before_data.get("year") == current_year, (
+            f"年度统计 year 错误，"
+            f"expected={current_year}，"
+            f"actual={before_data.get('year')}"
+        )
+
+        # ======================================
+        # 获取年度统计基线
+        # ======================================
+
+        before_total_income = Decimal(
+            str(
+                before_data.get(
+                    "total_income",
+                    "0.00",
+                )
+            )
+        )
+
+        before_total_expense = Decimal(
+            str(
+                before_data.get(
+                    "total_expense",
+                    "0.00",
+                )
+            )
+        )
+
+        before_total_balance = Decimal(
+            str(
+                before_data.get(
+                    "total_balance",
+                    "0.00",
+                )
+            )
+        )
+
+        # ======================================
+        # 获取月份列表
+        # ======================================
+
+        before_months = before_data.get(
+            "months",
+            [],
+        )
+
+        assert isinstance(
+            before_months,
+            list,
+        ), (
+            f"年度统计 months 结构错误：" f"{before_data}"
+        )
+
+        # ======================================
+        # 必须返回 12 个月
+        # ======================================
+
+        assert len(before_months) == 12, (
+            f"年度统计月份数量错误，" f"expected=12，" f"actual={len(before_months)}"
+        )
+
+        # ======================================
+        # 获取当前月份创建前统计
+        # ======================================
+
+        before_current_month = find_month_statistics(
+            before_months,
+            current_month,
+        )
+
+        assert before_current_month is not None, (
+            f"年度统计中未找到当前月份，" f"month={current_month}"
+        )
+
+        # ======================================
+        # month_text 断言
+        # ======================================
+
+        assert before_current_month.get("month_text") == current_month_text, (
+            f"当前月份 month_text 错误，"
+            f"expected="
+            f"{current_month_text}，"
+            f"actual="
+            f"{before_current_month.get('month_text')}"
+        )
+
+        # ======================================
+        # 获取当前月份基线
+        # ======================================
+
+        before_month_income = Decimal(
+            str(
+                before_current_month.get(
+                    "income",
+                    "0.00",
+                )
+            )
+        )
+
+        before_month_expense = Decimal(
+            str(
+                before_current_month.get(
+                    "expense",
+                    "0.00",
+                )
+            )
+        )
+
+        before_month_balance = Decimal(
+            str(
+                before_current_month.get(
+                    "balance",
+                    "0.00",
+                )
+            )
         )
 
         # ======================================
@@ -6605,11 +6832,7 @@ class TestTransaction:
             expense_response = transaction_api.create_transaction(expense_payload)
 
             assert expense_response.status_code == 200, (
-                f"创建年度统计支出账单失败，"
-                f"status_code="
-                f"{expense_response.status_code}，"
-                f"response="
-                f"{expense_response.text}"
+                f"创建年度统计支出账单失败，" f"response=" f"{expense_response.text}"
             )
 
             expense_response_data = expense_response.json()
@@ -6625,11 +6848,7 @@ class TestTransaction:
 
             expense_id = expense_data.get("id")
 
-            assert expense_id, (
-                f"创建年度统计支出账单后"
-                f"未返回 transaction_id："
-                f"{expense_response_data}"
-            )
+            assert expense_id
 
             # ==================================
             # 创建收入账单
@@ -6638,11 +6857,7 @@ class TestTransaction:
             income_response = transaction_api.create_transaction(income_payload)
 
             assert income_response.status_code == 200, (
-                f"创建年度统计收入账单失败，"
-                f"status_code="
-                f"{income_response.status_code}，"
-                f"response="
-                f"{income_response.text}"
+                f"创建年度统计收入账单失败，" f"response=" f"{income_response.text}"
             )
 
             income_response_data = income_response.json()
@@ -6658,83 +6873,287 @@ class TestTransaction:
 
             income_id = income_data.get("id")
 
-            assert income_id, (
-                f"创建年度统计收入账单后"
-                f"未返回 transaction_id："
-                f"{income_response_data}"
-            )
+            assert income_id
 
             # ==================================
-            # 调用年度统计接口
-            # ======================================
-
-            response = transaction_api.get_yearly_statistics()
-
+            # 查询创建账单后的年度统计
             # ==================================
-            # HTTP 状态码断言
-            # ======================================
 
-            assert response.status_code == 200, (
-                f"查询账单年度统计失败，"
-                f"status_code="
-                f"{response.status_code}，"
-                f"response="
-                f"{response.text}"
+            after_response = transaction_api.get_yearly_statistics()
+
+            assert after_response.status_code == 200, (
+                f"查询创建账单后年度统计失败，" f"response=" f"{after_response.text}"
             )
 
             # ==================================
             # 解析响应
-            # ======================================
+            # ==================================
 
-            response_data = response.json()
+            after_response_data = after_response.json()
+
+            assert after_response_data.get("code") == 200, (
+                f"查询创建账单后年度统计业务失败：" f"{after_response_data}"
+            )
+
+            after_data = after_response_data.get(
+                "data",
+                {},
+            )
+
+            assert isinstance(
+                after_data,
+                dict,
+            )
 
             # ==================================
-            # 临时输出真实响应结构
+            # 年份不能发生变化
+            # ======================================
+
+            assert after_data.get("year") == current_year
+
+            # ==================================
+            # 获取创建后的年度总计
+            # ======================================
+
+            after_total_income = Decimal(
+                str(
+                    after_data.get(
+                        "total_income",
+                        "0.00",
+                    )
+                )
+            )
+
+            after_total_expense = Decimal(
+                str(
+                    after_data.get(
+                        "total_expense",
+                        "0.00",
+                    )
+                )
+            )
+
+            after_total_balance = Decimal(
+                str(
+                    after_data.get(
+                        "total_balance",
+                        "0.00",
+                    )
+                )
+            )
+
+            # ==================================
+            # 年度收入增量断言
+            # ======================================
+
+            assert after_total_income - before_total_income == Decimal("500.00"), (
+                f"年度收入增量错误，"
+                f"before="
+                f"{before_total_income}，"
+                f"after="
+                f"{after_total_income}，"
+                f"expected_increment=500.00"
+            )
+
+            # ==================================
+            # 年度支出增量断言
+            # ======================================
+
+            assert after_total_expense - before_total_expense == Decimal("100.00"), (
+                f"年度支出增量错误，"
+                f"before="
+                f"{before_total_expense}，"
+                f"after="
+                f"{after_total_expense}，"
+                f"expected_increment=100.00"
+            )
+
+            # ==================================
+            # 年度结余增量断言
+            # ======================================
+
+            assert after_total_balance - before_total_balance == Decimal("400.00"), (
+                f"年度结余增量错误，"
+                f"before="
+                f"{before_total_balance}，"
+                f"after="
+                f"{after_total_balance}，"
+                f"expected_increment=400.00"
+            )
+
+            # ==================================
+            # 年度 balance 计算关系断言
+            # ======================================
+
+            assert after_total_balance == (after_total_income - after_total_expense), (
+                f"年度 total_balance "
+                f"计算错误，"
+                f"income="
+                f"{after_total_income}，"
+                f"expense="
+                f"{after_total_expense}，"
+                f"balance="
+                f"{after_total_balance}"
+            )
+
+            # ==================================
+            # 获取创建后的月份列表
+            # ======================================
+
+            after_months = after_data.get(
+                "months",
+                [],
+            )
+
+            assert isinstance(
+                after_months,
+                list,
+            )
+
+            assert len(after_months) == 12
+
+            # ==================================
+            # 获取创建后的当前月份
+            # ======================================
+
+            after_current_month = find_month_statistics(
+                after_months,
+                current_month,
+            )
+
+            assert after_current_month is not None, (
+                f"创建账单后年度统计中" f"未找到当前月份，" f"month={current_month}"
+            )
+
+            # ==================================
+            # month_text 断言
+            # ======================================
+
+            assert after_current_month.get("month_text") == current_month_text
+
+            # ==================================
+            # 获取创建后当前月份金额
+            # ======================================
+
+            after_month_income = Decimal(
+                str(
+                    after_current_month.get(
+                        "income",
+                        "0.00",
+                    )
+                )
+            )
+
+            after_month_expense = Decimal(
+                str(
+                    after_current_month.get(
+                        "expense",
+                        "0.00",
+                    )
+                )
+            )
+
+            after_month_balance = Decimal(
+                str(
+                    after_current_month.get(
+                        "balance",
+                        "0.00",
+                    )
+                )
+            )
+
+            # ==================================
+            # 当前月份收入增量断言
+            # ======================================
+
+            assert after_month_income - before_month_income == Decimal("500.00"), (
+                f"年度统计当前月收入增量错误，"
+                f"month="
+                f"{current_month_text}，"
+                f"before="
+                f"{before_month_income}，"
+                f"after="
+                f"{after_month_income}"
+            )
+
+            # ==================================
+            # 当前月份支出增量断言
+            # ======================================
+
+            assert after_month_expense - before_month_expense == Decimal("100.00"), (
+                f"年度统计当前月支出增量错误，"
+                f"month="
+                f"{current_month_text}，"
+                f"before="
+                f"{before_month_expense}，"
+                f"after="
+                f"{after_month_expense}"
+            )
+
+            # ==================================
+            # 当前月份结余增量断言
+            # ======================================
+
+            assert after_month_balance - before_month_balance == Decimal("400.00"), (
+                f"年度统计当前月结余增量错误，"
+                f"month="
+                f"{current_month_text}，"
+                f"before="
+                f"{before_month_balance}，"
+                f"after="
+                f"{after_month_balance}"
+            )
+
+            # ==================================
+            # 当前月份 balance 计算关系
+            # ======================================
+
+            assert after_month_balance == (after_month_income - after_month_expense), (
+                f"年度统计当前月 balance "
+                f"计算错误，"
+                f"income="
+                f"{after_month_income}，"
+                f"expense="
+                f"{after_month_expense}，"
+                f"balance="
+                f"{after_month_balance}"
+            )
+
+            # ==================================
+            # 其他月份不应该受影响
             # ======================================
             #
-            # 下一步字段确认后，
-            # 会删除这些 print，
-            # 改成正式金额和数量断言。
+            # 本测试只创建当前月份账单，
+            # 所以除当前月以外，
+            # 其他月份统计应保持不变。
             #
             # ======================================
 
-            print("\n========== 账单年度统计 ==========")
+            for before_month in before_months:
 
-            print(
-                "请求 URL：",
-                response.request.url,
-            )
+                month_number = before_month.get("month")
 
-            print(
-                "接口响应：",
-                response_data,
-            )
+                if month_number == current_month:
+                    continue
 
-            print("==================================")
+                after_month = find_month_statistics(
+                    after_months,
+                    month_number,
+                )
 
-            # ==================================
-            # 业务状态码断言
-            # ======================================
+                assert after_month is not None
 
-            assert response_data.get("code") == 200, (
-                f"查询账单年度统计业务失败：" f"{response_data}"
-            )
+                assert after_month.get("income") == before_month.get("income"), (
+                    f"{month_number} 月收入" f"被当前月测试数据错误影响"
+                )
 
-            # ==================================
-            # data 字段存在性断言
-            # ======================================
+                assert after_month.get("expense") == before_month.get("expense"), (
+                    f"{month_number} 月支出" f"被当前月测试数据错误影响"
+                )
 
-            assert "data" in response_data, (
-                f"年度统计响应缺少 data 字段：" f"{response_data}"
-            )
-
-            # ==================================
-            # data 不能为空
-            # ======================================
-
-            data = response_data.get("data")
-
-            assert data is not None, f"年度统计 data 为 None：" f"{response_data}"
+                assert after_month.get("balance") == before_month.get("balance"), (
+                    f"{month_number} 月结余" f"被当前月测试数据错误影响"
+                )
 
         finally:
             # ==================================
@@ -6772,3 +7191,2276 @@ class TestTransaction:
                         f"response="
                         f"{delete_response.text}"
                     )
+
+    @allure.story("账单标签")
+    @allure.title("创建账单并绑定标签成功")
+    def test_create_transaction_with_tag_success(
+        self,
+        tag_api,
+        tag_factory,
+        transaction_api,
+        transaction_factory,
+        transaction_context,
+    ):
+        """
+        验证创建账单时绑定标签成功。
+
+        测试流程：
+
+        1. 创建一个测试标签；
+        2. 获取标签 ID；
+        3. 创建一笔支出账单；
+        4. 创建账单时传入：
+
+            tag_ids = [tag_id]
+
+        5. 查询账单详情；
+        6. 验证账单已经绑定刚才创建的标签；
+        7. 测试结束后删除账单和标签。
+
+        测试重点：
+
+        不只验证创建账单接口返回 200，
+
+        还需要再次查询账单详情，
+        确认标签关联关系确实已经保存。
+        """
+
+        # ======================================
+        # 获取测试账户
+        # ======================================
+
+        account = transaction_context.get(
+            "account",
+            {},
+        )
+
+        account_id = account.get("id")
+
+        assert account_id, f"未获取到账单测试账户 ID：" f"{transaction_context}"
+
+        # ======================================
+        # 获取支出分类
+        # ======================================
+
+        expense_category = transaction_context.get(
+            "expense_category",
+            {},
+        )
+
+        expense_category_id = expense_category.get("id")
+
+        assert expense_category_id, f"未获取到支出分类 ID：" f"{transaction_context}"
+
+        # ======================================
+        # 初始化测试数据 ID
+        # ======================================
+
+        tag_id = None
+        transaction_id = None
+
+        try:
+            # ==================================
+            # 构造标签数据
+            # ==================================
+
+            tag_payload = tag_factory.build_tag()
+
+            # ==================================
+            # 创建标签
+            # ==================================
+
+            tag_response = tag_api.create_tag(tag_payload)
+
+            # ==================================
+            # 标签 HTTP 状态码断言
+            # ==================================
+
+            assert tag_response.status_code == 200, (
+                f"创建账单测试标签失败，"
+                f"status_code="
+                f"{tag_response.status_code}，"
+                f"response="
+                f"{tag_response.text}"
+            )
+
+            # ==================================
+            # 解析标签响应
+            # ==================================
+
+            tag_response_data = tag_response.json()
+
+            # ==================================
+            # 标签业务状态码断言
+            # ==================================
+
+            assert tag_response_data.get("code") == 200, (
+                f"创建账单测试标签业务失败：" f"{tag_response_data}"
+            )
+
+            # ==================================
+            # 获取标签数据
+            # ==================================
+
+            tag_data = tag_response_data.get(
+                "data",
+                {},
+            )
+
+            # ==================================
+            # 获取标签 ID
+            # ==================================
+
+            tag_id = tag_data.get("id")
+
+            assert tag_id, f"创建标签后未返回 tag_id：" f"{tag_response_data}"
+
+            # ==================================
+            # 标签名称断言
+            # ==================================
+
+            assert tag_data.get("name") == tag_payload["name"], (
+                f"标签名称错误，"
+                f"expected="
+                f"{tag_payload['name']}，"
+                f"actual="
+                f"{tag_data.get('name')}"
+            )
+
+            # ==================================
+            # 构造带标签的账单
+            # ======================================
+            #
+            # TransactionDataFactory
+            # 已经支持：
+            #
+            # tag_ids
+            #
+            # 当前只绑定一个标签。
+            #
+            # ==================================
+
+            transaction_payload = transaction_factory.build_expense(
+                account_id=account_id,
+                category_id=expense_category_id,
+                amount="88.88",
+                note=(transaction_factory.generate_note("自动化测试-账单绑定标签")),
+                tag_ids=[
+                    tag_id,
+                ],
+            )
+
+            # ==================================
+            # 创建账单
+            # ==================================
+
+            transaction_response = transaction_api.create_transaction(
+                transaction_payload
+            )
+
+            # ==================================
+            # 创建账单 HTTP 状态码断言
+            # ==================================
+
+            assert transaction_response.status_code == 200, (
+                f"创建带标签账单失败，"
+                f"status_code="
+                f"{transaction_response.status_code}，"
+                f"response="
+                f"{transaction_response.text}"
+            )
+
+            # ==================================
+            # 解析账单响应
+            # ==================================
+
+            transaction_response_data = transaction_response.json()
+
+            # ==================================
+            # 业务状态码断言
+            # ==================================
+
+            assert transaction_response_data.get("code") == 200, (
+                f"创建带标签账单业务失败：" f"{transaction_response_data}"
+            )
+
+            # ==================================
+            # 获取账单数据
+            # ==================================
+
+            transaction_data = transaction_response_data.get(
+                "data",
+                {},
+            )
+
+            # ==================================
+            # 获取账单 ID
+            # ==================================
+
+            transaction_id = transaction_data.get("id")
+
+            assert transaction_id, (
+                f"创建带标签账单后"
+                f"未返回 transaction_id："
+                f"{transaction_response_data}"
+            )
+
+            # ==================================
+            # 查询账单详情
+            # ======================================
+            #
+            # 不只验证创建接口返回，
+            # 还需要查询数据库实际保存结果。
+            #
+            # ==================================
+
+            detail_response = transaction_api.get_transaction_detail(transaction_id)
+
+            # ==================================
+            # 详情 HTTP 状态码断言
+            # ==================================
+
+            assert detail_response.status_code == 200, (
+                f"查询带标签账单详情失败，"
+                f"status_code="
+                f"{detail_response.status_code}，"
+                f"response="
+                f"{detail_response.text}"
+            )
+
+            # ==================================
+            # 解析详情响应
+            # ==================================
+
+            detail_response_data = detail_response.json()
+
+            # ==================================
+            # 业务状态码断言
+            # ==================================
+
+            assert detail_response_data.get("code") == 200, (
+                f"查询带标签账单详情业务失败：" f"{detail_response_data}"
+            )
+
+            # ==================================
+            # 获取账单详情
+            # ==================================
+
+            detail_data = detail_response_data.get(
+                "data",
+                {},
+            )
+
+            # ==================================
+            # 获取标签字段
+            # ======================================
+            #
+            # 账单详情常见有两种结构：
+            #
+            # 1.
+            #
+            # "tags": [
+            #     {
+            #         "id": 1,
+            #         "name": "测试标签"
+            #     }
+            # ]
+            #
+            # 2.
+            #
+            # "tag_ids": [1]
+            #
+            # 当前先兼容两种结构，
+            # 后面如果接口真实字段已经明确，
+            # 可以再收紧断言。
+            #
+            # ==================================
+
+            tags = detail_data.get("tags")
+
+            tag_ids = detail_data.get("tag_ids")
+
+            # ==================================
+            # 提取详情中的标签 ID
+            # ==================================
+
+            detail_tag_ids = set()
+
+            if isinstance(
+                tags,
+                list,
+            ):
+                for item in tags:
+
+                    if isinstance(
+                        item,
+                        dict,
+                    ):
+                        current_tag_id = item.get("id")
+
+                        if current_tag_id:
+                            detail_tag_ids.add(current_tag_id)
+
+                    elif isinstance(
+                        item,
+                        int,
+                    ):
+                        detail_tag_ids.add(item)
+
+            if isinstance(
+                tag_ids,
+                list,
+            ):
+                detail_tag_ids.update(tag_ids)
+
+            # ==================================
+            # 标签关联关系断言
+            # ======================================
+
+            assert tag_id in detail_tag_ids, (
+                f"账单详情中未找到绑定标签，"
+                f"expected_tag_id="
+                f"{tag_id}，"
+                f"tags="
+                f"{tags}，"
+                f"tag_ids="
+                f"{tag_ids}，"
+                f"detail="
+                f"{detail_data}"
+            )
+
+            # ==================================
+            # 如果返回完整 tags，
+            # 再验证标签名称
+            # ======================================
+
+            if isinstance(
+                tags,
+                list,
+            ):
+
+                matched_tag = next(
+                    (
+                        item
+                        for item in tags
+                        if (
+                            isinstance(
+                                item,
+                                dict,
+                            )
+                            and item.get("id") == tag_id
+                        )
+                    ),
+                    None,
+                )
+
+                if matched_tag is not None:
+                    assert matched_tag.get("name") == tag_payload["name"], (
+                        f"账单标签名称错误，"
+                        f"expected="
+                        f"{tag_payload['name']}，"
+                        f"actual="
+                        f"{matched_tag.get('name')}"
+                    )
+
+        finally:
+            # ==================================
+            # 先删除账单
+            # ======================================
+            #
+            # 必须优先解除业务关联，
+            # 再删除标签。
+            #
+            # ==================================
+
+            if transaction_id:
+
+                delete_response = transaction_api.delete_transaction(transaction_id)
+
+                if delete_response.status_code != 200:
+                    print(
+                        f"带标签账单清理失败，"
+                        f"transaction_id="
+                        f"{transaction_id}，"
+                        f"response="
+                        f"{delete_response.text}"
+                    )
+
+            # ==================================
+            # 再删除标签
+            # ==================================
+
+            if tag_id:
+
+                delete_tag_response = tag_api.delete_tag(tag_id)
+
+                if delete_tag_response.status_code != 200:
+                    print(
+                        f"账单测试标签清理失败，"
+                        f"tag_id="
+                        f"{tag_id}，"
+                        f"response="
+                        f"{delete_tag_response.text}"
+                    )
+
+    @allure.story("账单标签")
+    @allure.title("创建账单并绑定多个标签成功")
+    def test_create_transaction_with_multiple_tags_success(
+        self,
+        tag_api,
+        tag_factory,
+        transaction_api,
+        transaction_factory,
+        transaction_context,
+    ):
+        """
+        验证一个账单可以同时绑定多个标签。
+
+        测试流程：
+
+        1. 创建标签 A；
+        2. 创建标签 B；
+        3. 创建支出账单；
+        4. 创建账单时传入：
+
+            tag_ids = [
+                tag_a_id,
+                tag_b_id,
+            ]
+
+        5. 查询账单详情；
+        6. 验证标签 A、标签 B 均已绑定；
+        7. 验证标签数量正确；
+        8. 清理账单和标签。
+        """
+
+        # ======================================
+        # 获取测试账户
+        # ======================================
+
+        account = transaction_context.get(
+            "account",
+            {},
+        )
+
+        account_id = account.get("id")
+
+        assert account_id, f"未获取到账单测试账户 ID：" f"{transaction_context}"
+
+        # ======================================
+        # 获取支出分类
+        # ======================================
+
+        expense_category = transaction_context.get(
+            "expense_category",
+            {},
+        )
+
+        expense_category_id = expense_category.get("id")
+
+        assert expense_category_id, f"未获取到支出分类 ID：" f"{transaction_context}"
+
+        # ======================================
+        # 初始化测试数据 ID
+        # ======================================
+
+        tag_a_id = None
+        tag_b_id = None
+        transaction_id = None
+
+        try:
+            # ==================================
+            # 创建标签 A
+            # ==================================
+
+            tag_a_payload = tag_factory.build_tag(
+                name=(tag_factory.generate_tag_name("自动化标签A"))
+            )
+
+            tag_a_response = tag_api.create_tag(tag_a_payload)
+
+            assert tag_a_response.status_code == 200, (
+                f"创建标签 A 失败，" f"response=" f"{tag_a_response.text}"
+            )
+
+            tag_a_response_data = tag_a_response.json()
+
+            assert tag_a_response_data.get("code") == 200, (
+                f"创建标签 A 业务失败：" f"{tag_a_response_data}"
+            )
+
+            tag_a_data = tag_a_response_data.get(
+                "data",
+                {},
+            )
+
+            tag_a_id = tag_a_data.get("id")
+
+            assert tag_a_id, (
+                f"创建标签 A 后" f"未返回 tag_id：" f"{tag_a_response_data}"
+            )
+
+            # ==================================
+            # 创建标签 B
+            # ==================================
+
+            tag_b_payload = tag_factory.build_tag(
+                name=(tag_factory.generate_tag_name("自动化标签B"))
+            )
+
+            tag_b_response = tag_api.create_tag(tag_b_payload)
+
+            assert tag_b_response.status_code == 200, (
+                f"创建标签 B 失败，" f"response=" f"{tag_b_response.text}"
+            )
+
+            tag_b_response_data = tag_b_response.json()
+
+            assert tag_b_response_data.get("code") == 200, (
+                f"创建标签 B 业务失败：" f"{tag_b_response_data}"
+            )
+
+            tag_b_data = tag_b_response_data.get(
+                "data",
+                {},
+            )
+
+            tag_b_id = tag_b_data.get("id")
+
+            assert tag_b_id, (
+                f"创建标签 B 后" f"未返回 tag_id：" f"{tag_b_response_data}"
+            )
+
+            # ==================================
+            # 构造带多个标签的账单
+            # ==================================
+
+            transaction_payload = transaction_factory.build_expense(
+                account_id=account_id,
+                category_id=expense_category_id,
+                amount="99.99",
+                note=(transaction_factory.generate_note("自动化测试-多个标签")),
+                tag_ids=[
+                    tag_a_id,
+                    tag_b_id,
+                ],
+            )
+
+            # ==================================
+            # 创建账单
+            # ==================================
+
+            create_response = transaction_api.create_transaction(transaction_payload)
+
+            assert create_response.status_code == 200, (
+                f"创建多标签账单失败，"
+                f"status_code="
+                f"{create_response.status_code}，"
+                f"response="
+                f"{create_response.text}"
+            )
+
+            create_response_data = create_response.json()
+
+            assert create_response_data.get("code") == 200, (
+                f"创建多标签账单业务失败：" f"{create_response_data}"
+            )
+
+            create_data = create_response_data.get(
+                "data",
+                {},
+            )
+
+            transaction_id = create_data.get("id")
+
+            assert transaction_id, (
+                f"创建多标签账单后" f"未返回 transaction_id：" f"{create_response_data}"
+            )
+
+            # ==================================
+            # 查询账单详情
+            # ==================================
+
+            detail_response = transaction_api.get_transaction_detail(transaction_id)
+            print("\n=============================")
+
+            print(
+                "状态码：",
+                detail_response.status_code,
+            )
+
+            print(
+                "返回数据：",
+                detail_response.json(),
+            )
+
+            print("=============================")
+            assert detail_response.status_code == 200, (
+                f"查询多标签账单详情失败，" f"response=" f"{detail_response.text}"
+            )
+
+            detail_response_data = detail_response.json()
+
+            assert detail_response_data.get("code") == 200
+
+            detail_data = detail_response_data.get(
+                "data",
+                {},
+            )
+
+            # ==================================
+            # 获取账单标签
+            # ======================================
+
+            tags = detail_data.get(
+                "tags",
+                [],
+            )
+
+            tag_ids = detail_data.get(
+                "tag_ids",
+                [],
+            )
+
+            # ==================================
+            # 提取账单详情中的标签 ID
+            # ======================================
+
+            detail_tag_ids = set()
+
+            if isinstance(
+                tags,
+                list,
+            ):
+                for item in tags:
+
+                    if isinstance(
+                        item,
+                        dict,
+                    ):
+                        current_tag_id = item.get("id")
+
+                        if current_tag_id:
+                            detail_tag_ids.add(current_tag_id)
+
+                    elif isinstance(
+                        item,
+                        int,
+                    ):
+                        detail_tag_ids.add(item)
+
+            if isinstance(
+                tag_ids,
+                list,
+            ):
+                detail_tag_ids.update(tag_ids)
+
+            # ==================================
+            # 标签 A 绑定断言
+            # ======================================
+
+            assert tag_a_id in detail_tag_ids, (
+                f"账单未绑定标签 A，"
+                f"expected_tag_id="
+                f"{tag_a_id}，"
+                f"actual="
+                f"{detail_tag_ids}"
+            )
+
+            # ==================================
+            # 标签 B 绑定断言
+            # ======================================
+
+            assert tag_b_id in detail_tag_ids, (
+                f"账单未绑定标签 B，"
+                f"expected_tag_id="
+                f"{tag_b_id}，"
+                f"actual="
+                f"{detail_tag_ids}"
+            )
+
+            # ==================================
+            # 两个标签必须都存在
+            # ======================================
+
+            expected_tag_ids = {
+                tag_a_id,
+                tag_b_id,
+            }
+
+            assert expected_tag_ids.issubset(detail_tag_ids), (
+                f"账单标签绑定不完整，"
+                f"expected="
+                f"{expected_tag_ids}，"
+                f"actual="
+                f"{detail_tag_ids}"
+            )
+
+            # ==================================
+            # 如果接口返回完整 tags，
+            # 验证标签名称
+            # ======================================
+
+            if isinstance(
+                tags,
+                list,
+            ):
+
+                tag_name_map = {
+                    item.get("id"): item.get("name")
+                    for item in tags
+                    if isinstance(
+                        item,
+                        dict,
+                    )
+                }
+
+                if tag_a_id in tag_name_map:
+
+                    assert tag_name_map[tag_a_id] == tag_a_payload["name"], (
+                        f"标签 A 名称错误，"
+                        f"expected="
+                        f"{tag_a_payload['name']}，"
+                        f"actual="
+                        f"{tag_name_map[tag_a_id]}"
+                    )
+
+                if tag_b_id in tag_name_map:
+
+                    assert tag_name_map[tag_b_id] == tag_b_payload["name"], (
+                        f"标签 B 名称错误，"
+                        f"expected="
+                        f"{tag_b_payload['name']}，"
+                        f"actual="
+                        f"{tag_name_map[tag_b_id]}"
+                    )
+
+        finally:
+            # ==================================
+            # 优先删除账单
+            # ======================================
+
+            if transaction_id:
+
+                delete_response = transaction_api.delete_transaction(transaction_id)
+
+                if delete_response.status_code != 200:
+                    print(
+                        f"多标签账单清理失败，"
+                        f"transaction_id="
+                        f"{transaction_id}，"
+                        f"response="
+                        f"{delete_response.text}"
+                    )
+
+            # ==================================
+            # 删除标签 A
+            # ======================================
+
+            if tag_a_id:
+
+                delete_tag_response = tag_api.delete_tag(tag_a_id)
+
+                if delete_tag_response.status_code != 200:
+                    print(
+                        f"标签 A 清理失败，"
+                        f"tag_id="
+                        f"{tag_a_id}，"
+                        f"response="
+                        f"{delete_tag_response.text}"
+                    )
+
+            # ==================================
+            # 删除标签 B
+            # ======================================
+
+            if tag_b_id:
+
+                delete_tag_response = tag_api.delete_tag(tag_b_id)
+
+                if delete_tag_response.status_code != 200:
+                    print(
+                        f"标签 B 清理失败，"
+                        f"tag_id="
+                        f"{tag_b_id}，"
+                        f"response="
+                        f"{delete_tag_response.text}"
+                    )
+
+    @allure.story("账单标签")
+    @allure.title("修改账单标签关系成功")
+    def test_update_transaction_tags_success(
+        self,
+        tag_api,
+        tag_factory,
+        transaction_api,
+        transaction_factory,
+        transaction_context,
+    ):
+        """
+        验证修改账单时标签关系能够正确更新。
+
+        初始状态：
+
+            标签 A
+            标签 B
+
+        创建账单：
+
+            tag_ids = [A, B]
+
+        修改后：
+
+            tag_ids = [B, C]
+
+        预期：
+
+            标签 A：
+                被移除
+
+            标签 B：
+                继续保留
+
+            标签 C：
+                新增成功
+        """
+
+        # ======================================
+        # 获取测试账户
+        # ======================================
+
+        account = transaction_context.get(
+            "account",
+            {},
+        )
+
+        account_id = account.get("id")
+
+        assert account_id
+
+        # ======================================
+        # 获取支出分类
+        # ======================================
+
+        expense_category = transaction_context.get(
+            "expense_category",
+            {},
+        )
+
+        expense_category_id = expense_category.get("id")
+
+        assert expense_category_id
+
+        # ======================================
+        # 初始化 ID
+        # ======================================
+
+        tag_a_id = None
+        tag_b_id = None
+        tag_c_id = None
+        transaction_id = None
+
+        try:
+            # ==================================
+            # 创建标签 A
+            # ==================================
+
+            tag_a_payload = tag_factory.build_tag(
+                name=(tag_factory.generate_tag_name("自动化标签A"))
+            )
+
+            tag_a_response = tag_api.create_tag(tag_a_payload)
+
+            assert tag_a_response.status_code == 200
+
+            tag_a_response_data = tag_a_response.json()
+
+            assert tag_a_response_data.get("code") == 200
+
+            tag_a_id = tag_a_response_data.get(
+                "data",
+                {},
+            ).get("id")
+
+            assert tag_a_id
+
+            # ==================================
+            # 创建标签 B
+            # ==================================
+
+            tag_b_payload = tag_factory.build_tag(
+                name=(tag_factory.generate_tag_name("自动化标签B"))
+            )
+
+            tag_b_response = tag_api.create_tag(tag_b_payload)
+
+            assert tag_b_response.status_code == 200
+
+            tag_b_response_data = tag_b_response.json()
+
+            assert tag_b_response_data.get("code") == 200
+
+            tag_b_id = tag_b_response_data.get(
+                "data",
+                {},
+            ).get("id")
+
+            assert tag_b_id
+
+            # ==================================
+            # 创建标签 C
+            # ==================================
+
+            tag_c_payload = tag_factory.build_tag(
+                name=(tag_factory.generate_tag_name("自动化标签C"))
+            )
+
+            tag_c_response = tag_api.create_tag(tag_c_payload)
+
+            assert tag_c_response.status_code == 200
+
+            tag_c_response_data = tag_c_response.json()
+
+            assert tag_c_response_data.get("code") == 200
+
+            tag_c_id = tag_c_response_data.get(
+                "data",
+                {},
+            ).get("id")
+
+            assert tag_c_id
+
+            # ==================================
+            # 创建原始账单
+            # ======================================
+            #
+            # 初始绑定：
+            #
+            # A + B
+            #
+            # ==================================
+
+            create_payload = transaction_factory.build_expense(
+                account_id=account_id,
+                category_id=expense_category_id,
+                amount="66.66",
+                note=(transaction_factory.generate_note("自动化测试-修改标签")),
+                tag_ids=[
+                    tag_a_id,
+                    tag_b_id,
+                ],
+            )
+
+            create_response = transaction_api.create_transaction(create_payload)
+            print("\n=============================")
+
+            print(
+                "状态码：",
+                create_response.status_code,
+            )
+
+            print(
+                "返回数据：",
+                create_response.json(),
+            )
+            assert create_response.status_code == 200, (
+                f"创建原始账单失败，" f"response=" f"{create_response.text}"
+            )
+
+            create_response_data = create_response.json()
+
+            assert create_response_data.get("code") == 200
+
+            transaction_id = create_response_data.get(
+                "data",
+                {},
+            ).get("id")
+
+            assert transaction_id
+
+            # ==================================
+            # 构造修改后的账单
+            # ======================================
+            #
+            # 修改后：
+            #
+            # 删除 A
+            # 保留 B
+            # 新增 C
+            #
+            # ==================================
+
+            update_payload = {
+                "account_id": account_id,
+                "category_id": expense_category_id,
+                "transaction_type": "expense",
+                "amount": "66.66",
+                "transaction_time": (create_payload["transaction_time"]),
+                "note": ("自动化测试-修改标签后"),
+                "tag_ids": [
+                    tag_b_id,
+                    tag_c_id,
+                ],
+            }
+
+            # ==================================
+            # 修改账单
+            # ==================================
+
+            update_response = transaction_api.update_transaction(
+                transaction_id,
+                update_payload,
+            )
+
+            assert update_response.status_code == 200, (
+                f"修改账单标签失败，" f"response=" f"{update_response.text}"
+            )
+
+            update_response_data = update_response.json()
+
+            assert update_response_data.get("code") == 200, (
+                f"修改账单标签业务失败：" f"{update_response_data}"
+            )
+
+            # ==================================
+            # 查询修改后的账单详情
+            # ==================================
+
+            detail_response = transaction_api.get_transaction_detail(transaction_id)
+
+            assert detail_response.status_code == 200
+
+            detail_response_data = detail_response.json()
+
+            assert detail_response_data.get("code") == 200
+
+            detail_data = detail_response_data.get(
+                "data",
+                {},
+            )
+            print("\n=============================")
+
+            print(
+                "状态码：",
+                detail_response.status_code,
+            )
+
+            print(
+                "返回数据：",
+                detail_response.json(),
+            )
+            # ==================================
+            # 提取标签 ID
+            # ======================================
+
+            tags = detail_data.get(
+                "tags",
+                [],
+            )
+
+            tag_ids = detail_data.get(
+                "tag_ids",
+                [],
+            )
+
+            detail_tag_ids = set()
+
+            if isinstance(
+                tags,
+                list,
+            ):
+                for item in tags:
+
+                    if isinstance(
+                        item,
+                        dict,
+                    ):
+                        current_tag_id = item.get("id")
+
+                        if current_tag_id:
+                            detail_tag_ids.add(current_tag_id)
+
+                    elif isinstance(
+                        item,
+                        int,
+                    ):
+                        detail_tag_ids.add(item)
+
+            if isinstance(
+                tag_ids,
+                list,
+            ):
+                detail_tag_ids.update(tag_ids)
+
+            # ==================================
+            # 标签 A 必须已经删除
+            # ======================================
+
+            assert tag_a_id not in detail_tag_ids, (
+                f"修改账单后标签 A "
+                f"仍然存在，"
+                f"tag_a_id="
+                f"{tag_a_id}，"
+                f"actual="
+                f"{detail_tag_ids}"
+            )
+
+            # ==================================
+            # 标签 B 必须保留
+            # ======================================
+
+            assert tag_b_id in detail_tag_ids, (
+                f"修改账单后标签 B "
+                f"被错误删除，"
+                f"tag_b_id="
+                f"{tag_b_id}，"
+                f"actual="
+                f"{detail_tag_ids}"
+            )
+
+            # ==================================
+            # 标签 C 必须新增成功
+            # ======================================
+
+            assert tag_c_id in detail_tag_ids, (
+                f"修改账单后标签 C "
+                f"未绑定成功，"
+                f"tag_c_id="
+                f"{tag_c_id}，"
+                f"actual="
+                f"{detail_tag_ids}"
+            )
+
+            # ==================================
+            # 标签最终集合必须正确
+            # ======================================
+
+            expected_tag_ids = {
+                tag_b_id,
+                tag_c_id,
+            }
+
+            assert detail_tag_ids == expected_tag_ids, (
+                f"修改后的账单标签集合错误，"
+                f"expected="
+                f"{expected_tag_ids}，"
+                f"actual="
+                f"{detail_tag_ids}"
+            )
+
+        finally:
+            # ==================================
+            # 先删除账单
+            # ==================================
+
+            if transaction_id:
+
+                delete_response = transaction_api.delete_transaction(transaction_id)
+
+                if delete_response.status_code != 200:
+                    print(
+                        f"修改标签测试账单"
+                        f"清理失败，"
+                        f"transaction_id="
+                        f"{transaction_id}，"
+                        f"response="
+                        f"{delete_response.text}"
+                    )
+
+            # ==================================
+            # 删除标签 A
+            # ==================================
+
+            if tag_a_id:
+
+                delete_response = tag_api.delete_tag(tag_a_id)
+
+                if delete_response.status_code != 200:
+                    print(f"标签 A 清理失败，" f"tag_id=" f"{tag_a_id}")
+
+            # ==================================
+            # 删除标签 B
+            # ==================================
+
+            if tag_b_id:
+
+                delete_response = tag_api.delete_tag(tag_b_id)
+
+                if delete_response.status_code != 200:
+                    print(f"标签 B 清理失败，" f"tag_id=" f"{tag_b_id}")
+
+            # ==================================
+            # 删除标签 C
+            # ==================================
+
+            if tag_c_id:
+
+                delete_response = tag_api.delete_tag(tag_c_id)
+
+                if delete_response.status_code != 200:
+                    print(f"标签 C 清理失败，" f"tag_id=" f"{tag_c_id}")
+
+    @allure.story("账单图片")
+    @allure.title("账单图片上传查询删除成功")
+    def test_transaction_image_lifecycle_success(
+        self,
+        transaction_api,
+        transaction_factory,
+        transaction_context,
+    ):
+        """
+        验证账单图片完整生命周期。
+
+        测试流程：
+
+        1. 创建测试账单；
+        2. 从 data 目录读取真实测试图片；
+        3. 上传账单图片；
+        4. 查询账单图片列表；
+        5. 验证上传图片存在；
+        6. 删除图片；
+        7. 再次查询图片列表；
+        8. 验证图片已经被删除；
+        9. 清理账单。
+
+        测试图片位置：
+
+            E:\\Project\\bookkeeping_api_test
+            \\data\\transaction_test.png
+
+        使用真实图片文件的好处：
+
+        1. 不需要动态生成图片；
+        2. 避免 Django / Pillow
+        判断测试图片损坏；
+        3. 测试数据更加稳定；
+        4. 方便后续复用。
+        """
+
+        # ======================================
+        # 获取测试账户
+        # ======================================
+
+        account = transaction_context.get(
+            "account",
+            {},
+        )
+
+        account_id = account.get("id")
+
+        assert account_id, f"未获取到账单测试账户 ID：" f"{transaction_context}"
+
+        # ======================================
+        # 获取支出分类
+        # ======================================
+
+        expense_category = transaction_context.get(
+            "expense_category",
+            {},
+        )
+
+        expense_category_id = expense_category.get("id")
+
+        assert expense_category_id, f"未获取到支出分类 ID：" f"{transaction_context}"
+
+        # ======================================
+        # 获取项目根目录
+        # ======================================
+
+        project_root = Path(__file__).resolve().parent.parent
+
+        # ======================================
+        # 获取测试图片路径
+        # ======================================
+        #
+        # 实际测试图片位置：
+        #
+        # E:\Project\bookkeeping_api_test
+        # \data\imgs\transaction_test.png
+        #
+        # ======================================
+
+        image_path = project_root / "data" / "imgs" / "transaction_test.png"
+
+        # ======================================
+        # 测试图片存在性断言
+        # ======================================
+
+        assert image_path.exists(), f"账单测试图片不存在：" f"{image_path}"
+
+        assert image_path.is_file(), f"账单测试图片路径不是文件：" f"{image_path}"
+
+        # ======================================
+        # 初始化测试数据 ID
+        # ======================================
+
+        transaction_id = None
+        image_id = None
+
+        try:
+            # ==================================
+            # 构造测试账单
+            # ==================================
+
+            payload = transaction_factory.build_expense(
+                account_id=account_id,
+                category_id=expense_category_id,
+                amount="88.88",
+                note=(transaction_factory.generate_note("自动化测试-账单图片")),
+            )
+
+            # ==================================
+            # 创建测试账单
+            # ==================================
+
+            create_response = transaction_api.create_transaction(payload)
+
+            # ==================================
+            # 创建账单 HTTP 状态码断言
+            # ==================================
+
+            assert create_response.status_code == 200, (
+                f"创建图片测试账单失败，"
+                f"status_code="
+                f"{create_response.status_code}，"
+                f"response="
+                f"{create_response.text}"
+            )
+
+            # ==================================
+            # 解析创建账单响应
+            # ==================================
+
+            create_response_data = create_response.json()
+
+            # ==================================
+            # 创建账单业务状态码断言
+            # ==================================
+
+            assert create_response_data.get("code") == 200, (
+                f"创建图片测试账单业务失败：" f"{create_response_data}"
+            )
+
+            # ==================================
+            # 获取账单 ID
+            # ==================================
+
+            transaction_id = create_response_data.get(
+                "data",
+                {},
+            ).get("id")
+
+            assert transaction_id, (
+                f"创建图片测试账单后"
+                f"未返回 transaction_id："
+                f"{create_response_data}"
+            )
+
+            # ==================================
+            # 上传账单图片
+            # ======================================
+            #
+            # requests multipart/form-data：
+            #
+            # {
+            #     "image": (
+            #         文件名,
+            #         文件对象,
+            #         Content-Type
+            #     )
+            # }
+            #
+            # ==================================
+
+            with image_path.open(
+                "rb",
+            ) as image_file:
+
+                files = {
+                    "image": (
+                        image_path.name,
+                        image_file,
+                        "image/png",
+                    )
+                }
+
+                upload_response = transaction_api.upload_transaction_image(
+                    transaction_id,
+                    files,
+                )
+
+            # ==================================
+            # 上传图片 HTTP 状态码断言
+            # ==================================
+
+            assert upload_response.status_code == 200, (
+                f"上传账单图片失败，"
+                f"status_code="
+                f"{upload_response.status_code}，"
+                f"response="
+                f"{upload_response.text}"
+            )
+
+            # ==================================
+            # 解析上传响应
+            # ==================================
+
+            upload_response_data = upload_response.json()
+
+            # ==================================
+            # 上传图片业务状态码断言
+            # ==================================
+
+            assert upload_response_data.get("code") == 200, (
+                f"上传账单图片业务失败：" f"{upload_response_data}"
+            )
+
+            # ==================================
+            # 获取上传图片数据
+            # ==================================
+
+            upload_data = upload_response_data.get(
+                "data",
+                {},
+            )
+
+            assert isinstance(
+                upload_data,
+                dict,
+            ), (
+                f"上传账单图片 data " f"结构错误：" f"{upload_response_data}"
+            )
+
+            # ==================================
+            # 获取 image_id
+            # ======================================
+
+            image_id = upload_data.get("id")
+
+            assert image_id, (
+                f"上传账单图片成功后" f"未返回 image_id：" f"{upload_response_data}"
+            )
+
+            # ==================================
+            # 查询账单图片列表
+            # ======================================
+
+            list_response = transaction_api.get_transaction_images(transaction_id)
+
+            # ==================================
+            # 图片列表 HTTP 状态码断言
+            # ==================================
+
+            assert list_response.status_code == 200, (
+                f"查询账单图片列表失败，"
+                f"status_code="
+                f"{list_response.status_code}，"
+                f"response="
+                f"{list_response.text}"
+            )
+
+            # ==================================
+            # 解析列表响应
+            # ==================================
+
+            list_response_data = list_response.json()
+
+            # ==================================
+            # 图片列表业务状态码断言
+            # ==================================
+
+            assert list_response_data.get("code") == 200, (
+                f"查询账单图片列表业务失败：" f"{list_response_data}"
+            )
+
+            # ==================================
+            # 获取图片列表
+            # ======================================
+
+            image_list = list_response_data.get(
+                "data",
+                [],
+            )
+
+            # ==================================
+            # 兼容分页 / 包装结构
+            # ======================================
+            #
+            # 可能返回：
+            #
+            # data: [...]
+            #
+            # 或：
+            #
+            # data: {
+            #     "results": [...]
+            # }
+            #
+            # 或：
+            #
+            # data: {
+            #     "images": [...]
+            # }
+            #
+            # ======================================
+
+            if isinstance(
+                image_list,
+                dict,
+            ):
+                image_list = image_list.get(
+                    "results",
+                    image_list.get(
+                        "images",
+                        [],
+                    ),
+                )
+
+            # ==================================
+            # 图片列表结构断言
+            # ==================================
+
+            assert isinstance(
+                image_list,
+                list,
+            ), (
+                f"账单图片列表结构错误：" f"{list_response_data}"
+            )
+
+            # ==================================
+            # 查找刚刚上传的图片
+            # ======================================
+
+            uploaded_image = next(
+                (item for item in image_list if (item.get("id") == image_id)),
+                None,
+            )
+
+            # ==================================
+            # 上传后的图片必须存在
+            # ======================================
+
+            assert uploaded_image is not None, (
+                f"账单图片上传成功后"
+                f"未在图片列表中找到，"
+                f"image_id="
+                f"{image_id}，"
+                f"images="
+                f"{image_list}"
+            )
+
+            # ==================================
+            # 图片 ID 断言
+            # ======================================
+
+            assert uploaded_image.get("id") == image_id
+
+            # ==================================
+            # 删除账单图片
+            # ======================================
+
+            delete_image_response = transaction_api.delete_transaction_image(
+                transaction_id,
+                image_id,
+            )
+
+            # ==================================
+            # 删除图片 HTTP 状态码断言
+            # ==================================
+
+            assert delete_image_response.status_code == 200, (
+                f"删除账单图片失败，"
+                f"status_code="
+                f"{delete_image_response.status_code}，"
+                f"response="
+                f"{delete_image_response.text}"
+            )
+
+            # ==================================
+            # 解析删除响应
+            # ==================================
+
+            delete_image_response_data = delete_image_response.json()
+
+            # ==================================
+            # 删除图片业务状态码断言
+            # ==================================
+
+            assert delete_image_response_data.get("code") == 200, (
+                f"删除账单图片业务失败：" f"{delete_image_response_data}"
+            )
+
+            # ==================================
+            # 保存已删除图片 ID
+            # ======================================
+            #
+            # image_id 设置为 None，
+            # 避免 finally 再次重复删除。
+            #
+            # ==================================
+
+            deleted_image_id = image_id
+
+            image_id = None
+
+            # ==================================
+            # 再次查询图片列表
+            # ======================================
+
+            after_delete_response = transaction_api.get_transaction_images(
+                transaction_id
+            )
+
+            # ==================================
+            # HTTP 状态码断言
+            # ==================================
+
+            assert after_delete_response.status_code == 200, (
+                f"删除图片后重新查询失败，" f"response=" f"{after_delete_response.text}"
+            )
+
+            # ==================================
+            # 解析响应
+            # ==================================
+
+            after_delete_response_data = after_delete_response.json()
+
+            assert after_delete_response_data.get("code") == 200, (
+                f"删除图片后查询业务失败：" f"{after_delete_response_data}"
+            )
+
+            # ==================================
+            # 获取删除后的图片列表
+            # ==================================
+
+            after_delete_images = after_delete_response_data.get(
+                "data",
+                [],
+            )
+
+            # ==================================
+            # 兼容包装结构
+            # ==================================
+
+            if isinstance(
+                after_delete_images,
+                dict,
+            ):
+                after_delete_images = after_delete_images.get(
+                    "results",
+                    after_delete_images.get(
+                        "images",
+                        [],
+                    ),
+                )
+
+            # ==================================
+            # 删除后列表结构断言
+            # ==================================
+
+            assert isinstance(
+                after_delete_images,
+                list,
+            ), (
+                f"删除图片后列表结构错误：" f"{after_delete_response_data}"
+            )
+
+            # ==================================
+            # 判断已删除图片是否仍然存在
+            # ==================================
+
+            image_exists = any(
+                (item.get("id") == deleted_image_id) for item in after_delete_images
+            )
+
+            # ==================================
+            # 已删除图片不能继续存在
+            # ==================================
+
+            assert not image_exists, (
+                f"账单图片已经删除，"
+                f"但仍然存在于图片列表中，"
+                f"image_id="
+                f"{deleted_image_id}，"
+                f"images="
+                f"{after_delete_images}"
+            )
+
+        finally:
+            # ==================================
+            # 测试异常时尝试清理图片
+            # ======================================
+            #
+            # 如果上传成功，
+            # 但测试在删除图片之前失败，
+            #
+            # image_id 仍然存在，
+            # 此时尝试删除图片。
+            #
+            # ==================================
+
+            if transaction_id and image_id:
+                try:
+                    (
+                        transaction_api.delete_transaction_image(
+                            transaction_id,
+                            image_id,
+                        )
+                    )
+
+                except Exception as error:
+                    print(
+                        f"账单测试图片清理失败，"
+                        f"transaction_id="
+                        f"{transaction_id}，"
+                        f"image_id="
+                        f"{image_id}，"
+                        f"error="
+                        f"{error}"
+                    )
+
+            # ==================================
+            # 清理测试账单
+            # ======================================
+
+            if transaction_id:
+
+                delete_response = transaction_api.delete_transaction(transaction_id)
+
+                if delete_response.status_code != 200:
+                    print(
+                        f"图片测试账单清理失败，"
+                        f"transaction_id="
+                        f"{transaction_id}，"
+                        f"status_code="
+                        f"{delete_response.status_code}，"
+                        f"response="
+                        f"{delete_response.text}"
+                    )
+
+    @allure.story("账单图片")
+    @allure.title("上传非图片文件失败")
+    def test_upload_transaction_invalid_file_failed(
+        self,
+        transaction_api,
+        transaction_factory,
+        transaction_context,
+    ):
+        """
+        验证上传非图片文件时接口拒绝处理。
+
+        测试流程：
+
+        1. 创建测试账单；
+        2. 创建一个临时 txt 文件；
+        3. 将 txt 文件作为 image 字段上传；
+        4. 验证接口返回失败；
+        5. 验证没有生成有效图片数据；
+        6. 清理测试账单。
+        """
+
+        # ======================================
+        # 获取测试账户
+        # ======================================
+
+        account = transaction_context.get(
+            "account",
+            {},
+        )
+
+        account_id = account.get("id")
+
+        assert account_id
+
+        # ======================================
+        # 获取支出分类
+        # ======================================
+
+        expense_category = transaction_context.get(
+            "expense_category",
+            {},
+        )
+
+        expense_category_id = expense_category.get("id")
+
+        assert expense_category_id
+
+        # ======================================
+        # 初始化账单 ID
+        # ======================================
+
+        transaction_id = None
+
+        try:
+            # ==================================
+            # 创建测试账单
+            # ==================================
+
+            payload = transaction_factory.build_expense(
+                account_id=account_id,
+                category_id=expense_category_id,
+                amount="66.66",
+                note=(transaction_factory.generate_note("自动化测试-非图片上传")),
+            )
+
+            create_response = transaction_api.create_transaction(payload)
+
+            assert create_response.status_code == 200
+
+            create_response_data = create_response.json()
+
+            assert create_response_data.get("code") == 200
+
+            transaction_id = create_response_data.get(
+                "data",
+                {},
+            ).get("id")
+
+            assert transaction_id
+
+            # ==================================
+            # 构造非图片文件
+            # ======================================
+
+            files = {
+                "image": (
+                    "invalid_file.txt",
+                    b"this is not an image",
+                    "text/plain",
+                )
+            }
+
+            # ==================================
+            # 上传非图片文件
+            # ======================================
+
+            response = transaction_api.upload_transaction_image(
+                transaction_id,
+                files,
+            )
+
+            # ==================================
+            # HTTP 状态码断言
+            # ======================================
+
+            assert response.status_code == 400, (
+                f"上传非图片文件未按预期失败，"
+                f"status_code="
+                f"{response.status_code}，"
+                f"response="
+                f"{response.text}"
+            )
+
+            # ==================================
+            # 解析响应
+            # ======================================
+
+            response_data = response.json()
+
+            # ==================================
+            # 业务状态码断言
+            # ======================================
+
+            assert response_data.get("code") == 400, (
+                f"上传非图片文件业务状态错误：" f"{response_data}"
+            )
+
+            # ==================================
+            # data 不应该存在有效图片信息
+            # ======================================
+
+            data = response_data.get("data")
+
+            assert (
+                data is None
+                or not isinstance(
+                    data,
+                    dict,
+                )
+                or not data.get("id")
+            ), (
+                f"上传非图片文件失败后" f"不应该返回有效 image_id：" f"{response_data}"
+            )
+
+        finally:
+            # ==================================
+            # 清理测试账单
+            # ======================================
+
+            if transaction_id:
+
+                delete_response = transaction_api.delete_transaction(transaction_id)
+
+                if delete_response.status_code != 200:
+                    print(
+                        f"非图片上传测试账单清理失败，"
+                        f"transaction_id="
+                        f"{transaction_id}，"
+                        f"response="
+                        f"{delete_response.text}"
+                    )
+
+    @allure.story("账单图片")
+    @allure.title("上传损坏图片失败")
+    def test_upload_transaction_corrupted_image_failed(
+        self,
+        transaction_api,
+        transaction_factory,
+        transaction_context,
+    ):
+        """
+        验证上传损坏图片时接口拒绝处理。
+
+        测试流程：
+
+        1. 创建测试账单；
+        2. 构造一个扩展名为 png，
+        Content-Type 也是 image/png，
+        但实际内容不是合法图片的数据；
+        3. 调用账单图片上传接口；
+        4. 验证接口返回 400；
+        5. 验证没有生成有效图片数据；
+        6. 清理测试账单。
+
+        这个场景主要验证：
+
+        后端不能只根据：
+
+            文件扩展名
+            Content-Type
+
+        判断是否为图片，
+
+        还应该校验实际文件内容。
+        """
+
+        # ======================================
+        # 获取测试账户
+        # ======================================
+
+        account = transaction_context.get(
+            "account",
+            {},
+        )
+
+        account_id = account.get("id")
+
+        assert account_id, f"未获取到账单测试账户 ID：" f"{transaction_context}"
+
+        # ======================================
+        # 获取支出分类
+        # ======================================
+
+        expense_category = transaction_context.get(
+            "expense_category",
+            {},
+        )
+
+        expense_category_id = expense_category.get("id")
+
+        assert expense_category_id, f"未获取到支出分类 ID：" f"{transaction_context}"
+
+        # ======================================
+        # 初始化账单 ID
+        # ======================================
+
+        transaction_id = None
+
+        try:
+            # ==================================
+            # 构造测试账单
+            # ==================================
+
+            payload = transaction_factory.build_expense(
+                account_id=account_id,
+                category_id=expense_category_id,
+                amount="66.66",
+                note=(transaction_factory.generate_note("自动化测试-损坏图片上传")),
+            )
+
+            # ==================================
+            # 创建测试账单
+            # ==================================
+
+            create_response = transaction_api.create_transaction(payload)
+
+            # ==================================
+            # 创建账单状态码断言
+            # ==================================
+
+            assert create_response.status_code == 200, (
+                f"创建损坏图片测试账单失败，"
+                f"status_code="
+                f"{create_response.status_code}，"
+                f"response="
+                f"{create_response.text}"
+            )
+
+            create_response_data = create_response.json()
+
+            assert create_response_data.get("code") == 200, (
+                f"创建损坏图片测试账单业务失败：" f"{create_response_data}"
+            )
+
+            transaction_id = create_response_data.get(
+                "data",
+                {},
+            ).get("id")
+
+            assert transaction_id, (
+                f"创建损坏图片测试账单后"
+                f"未返回 transaction_id："
+                f"{create_response_data}"
+            )
+
+            # ==================================
+            # 构造损坏 PNG 文件
+            # ======================================
+            #
+            # 文件名：
+            #
+            # corrupted.png
+            #
+            # Content-Type：
+            #
+            # image/png
+            #
+            # 但是文件内容只是普通字符串，
+            # 并不是合法 PNG 图片。
+            #
+            # ==================================
+
+            files = {
+                "image": (
+                    "corrupted.png",
+                    b"this is corrupted image data",
+                    "image/png",
+                )
+            }
+
+            # ==================================
+            # 上传损坏图片
+            # ==================================
+
+            response = transaction_api.upload_transaction_image(
+                transaction_id,
+                files,
+            )
+
+            # ==================================
+            # HTTP 状态码断言
+            # ======================================
+
+            assert response.status_code == 400, (
+                f"上传损坏图片未按预期失败，"
+                f"status_code="
+                f"{response.status_code}，"
+                f"response="
+                f"{response.text}"
+            )
+
+            # ==================================
+            # 解析响应
+            # ==================================
+
+            response_data = response.json()
+            print(response_data)
+            # ==================================
+            # 业务状态码断言
+            # ======================================
+
+            assert response_data.get("code") == 400, (
+                f"上传损坏图片业务状态错误：" f"{response_data}"
+            )
+
+            # ==================================
+            # 错误信息存在性断言
+            # ======================================
+
+            message = response_data.get(
+                "message",
+                "",
+            )
+
+            assert message, f"上传损坏图片失败后" f"未返回错误信息：" f"{response_data}"
+
+            # ==================================
+            # 不应该返回有效图片 ID
+            # ======================================
+
+            data = response_data.get("data")
+
+            if isinstance(
+                data,
+                dict,
+            ):
+                assert not data.get("id"), (
+                    f"上传损坏图片失败后"
+                    f"不应该返回有效 image_id："
+                    f"{response_data}"
+                )
+
+        finally:
+            # ==================================
+            # 清理测试账单
+            # ======================================
+
+            if transaction_id:
+
+                delete_response = transaction_api.delete_transaction(transaction_id)
+
+                if delete_response.status_code != 200:
+                    print(
+                        f"损坏图片上传测试账单"
+                        f"清理失败，"
+                        f"transaction_id="
+                        f"{transaction_id}，"
+                        f"response="
+                        f"{delete_response.text}"
+                    )
+
+    @allure.story("账单图片")
+    @allure.title("给不存在的账单上传图片失败")
+    def test_upload_image_to_nonexistent_transaction_failed(
+        self,
+        transaction_api,
+    ):
+        """
+        验证给不存在的账单上传正常图片时，
+        接口必须拒绝处理。
+
+        测试流程：
+
+        1. 从 data/imgs 读取真实测试图片；
+        2. 使用一个不存在的 transaction_id；
+        3. 调用账单图片上传接口；
+        4. 验证接口返回失败；
+        5. 验证没有生成有效图片数据。
+
+        测试重点：
+
+        即使上传文件本身是合法图片，
+        如果账单不存在，
+        也不能创建图片关联关系。
+        """
+
+        # ======================================
+        # 构造不存在的账单 ID
+        # ======================================
+        #
+        # 使用一个非常大的 ID，
+        # 避免和测试环境中的真实账单冲突。
+        #
+        # ======================================
+
+        transaction_id = 999999999
+
+        # ======================================
+        # 获取项目根目录
+        # ======================================
+
+        project_root = Path(__file__).resolve().parent.parent
+
+        # ======================================
+        # 获取真实测试图片
+        # ======================================
+
+        image_path = project_root / "data" / "imgs" / "transaction_test.png"
+
+        # ======================================
+        # 图片存在性断言
+        # ======================================
+
+        assert image_path.exists(), f"账单测试图片不存在：" f"{image_path}"
+
+        assert image_path.is_file(), f"账单测试图片路径不是文件：" f"{image_path}"
+
+        # ======================================
+        # 上传正常图片到不存在的账单
+        # ======================================
+
+        with image_path.open(
+            "rb",
+        ) as image_file:
+
+            files = {
+                "image": (
+                    image_path.name,
+                    image_file,
+                    "image/png",
+                )
+            }
+
+            response = transaction_api.upload_transaction_image(
+                transaction_id,
+                files,
+            )
+
+        # ======================================
+        # HTTP 状态码不能是成功
+        # ======================================
+        #
+        # 后端可能返回：
+        #
+        # 400
+        # 404
+        #
+        # 具体以项目实现为准。
+        #
+        # 当前最重要的是：
+        #
+        # 不能返回 200。
+        #
+        # ======================================
+
+        assert response.status_code != 200, (
+            f"给不存在的账单上传图片"
+            f"错误返回成功，"
+            f"status_code="
+            f"{response.status_code}，"
+            f"response="
+            f"{response.text}"
+        )
+
+        # ======================================
+        # 解析响应
+        # ======================================
+
+        response_data = response.json()
+        print(response_data)
+        # ======================================
+        # 业务状态不能成功
+        # ======================================
+
+        assert response_data.get("code") != 200, (
+            f"给不存在的账单上传图片" f"业务状态错误，" f"response=" f"{response_data}"
+        )
+
+        # ======================================
+        # 错误信息存在性断言
+        # ======================================
+
+        message = response_data.get(
+            "message",
+            "",
+        )
+
+        assert message, (
+            f"不存在账单上传图片失败后" f"未返回错误信息：" f"{response_data}"
+        )
+
+        # ======================================
+        # 不允许返回有效图片 ID
+        # ======================================
+
+        data = response_data.get("data")
+
+        if isinstance(
+            data,
+            dict,
+        ):
+            assert not data.get("id"), (
+                f"不存在账单上传图片失败后"
+                f"不应该返回有效 image_id："
+                f"{response_data}"
+            )
