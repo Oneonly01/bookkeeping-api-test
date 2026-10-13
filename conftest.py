@@ -1,3 +1,4 @@
+import uuid
 import pytest
 from common.account_api import AccountApi
 from common.auth_api import AuthApi
@@ -959,6 +960,173 @@ def fresh_auth_context(
         "access_token": access_token_value,
         "refresh_token": refresh_token_value,
     }
+
+
+@pytest.fixture
+def another_user_context(
+    config,
+):
+    """
+    创建第二个测试用户认证上下文。
+
+    用于：
+
+    1. 用户数据隔离测试；
+    2. 权限测试；
+    3. 验证不能访问其他用户资源。
+
+
+    返回：
+
+    client:
+        第二个用户请求客户端
+
+    access_token:
+        第二个用户 token
+
+    """
+
+    # ==========================================
+    # 创建独立客户端
+    # ==========================================
+
+    another_client = RequestClient(
+        base_url=config.base_url,
+        timeout=config.timeout,
+    )
+
+    another_auth_api = AuthApi(
+        client=another_client,
+        api_prefix=config.api_prefix,
+    )
+
+    # ==========================================
+    # 生成第二个测试账号
+    # ==========================================
+
+    username = f"auto_user_{uuid.uuid4().hex[:8]}"
+
+    password = "Test123456"
+
+    register_payload = {
+        "username": username,
+        "password": password,
+    }
+
+    # ==========================================
+    # 注册
+    # ==========================================
+
+    register_response = another_auth_api.register(register_payload)
+
+    assert register_response.status_code in (
+        200,
+        201,
+    ), (
+        f"第二用户注册失败：" f"{register_response.text}"
+    )
+
+    # ==========================================
+    # 登录
+    # ==========================================
+
+    login_payload = {
+        "username": username,
+        "password": password,
+    }
+
+    login_response = another_auth_api.login(login_payload)
+
+    assert login_response.status_code == 200, (
+        f"第二用户登录失败：" f"{login_response.text}"
+    )
+
+    login_data = login_response.json()
+
+    assert login_data.get("code") == 200
+
+    token_data = login_data.get("data", {})
+
+    access_token = token_data.get("access_token")
+
+    assert access_token
+
+    another_client.set_token(access_token)
+
+    return {
+        "client": another_client,
+        "auth_api": another_auth_api,
+        "username": username,
+        "password": password,
+        "access_token": access_token,
+    }
+
+
+@pytest.fixture
+def another_auth_client(
+    config,
+):
+    """
+    第二个测试用户认证客户端。
+
+    用于：
+
+    1. 用户数据隔离测试；
+    2. 权限测试；
+    3. 验证用户不能访问其他用户资源。
+    """
+
+    # ==========================================
+    # 创建独立客户端
+    # ==========================================
+
+    another_client = RequestClient(
+        base_url=config.base_url,
+        timeout=config.timeout,
+    )
+
+    another_auth_api = AuthApi(
+        client=another_client,
+        api_prefix=config.api_prefix,
+    )
+
+    # ==========================================
+    # 获取第二个测试账号
+    # ==========================================
+
+    another_user = config.test_user2.copy()
+
+    # ==========================================
+    # 登录第二个用户
+    # ==========================================
+
+    login_response = another_auth_api.login(another_user)
+
+    assert login_response.status_code == 200, (
+        f"第二测试用户登录失败，"
+        f"status_code={login_response.status_code}，"
+        f"response={login_response.text}"
+    )
+
+    login_result = login_response.json()
+
+    assert login_result.get("code") == 200, (
+        f"第二测试用户登录业务失败：" f"{login_result}"
+    )
+
+    data = login_result.get("data", {})
+
+    access_token = data.get("access_token")
+
+    assert access_token, f"登录成功但是没有返回 access_token：" f"{login_result}"
+
+    # ==========================================
+    # 设置 Token
+    # ==========================================
+
+    another_client.set_token(access_token)
+
+    return another_client
 
 
 @pytest.fixture(scope="session")

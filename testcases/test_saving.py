@@ -1,5 +1,8 @@
 from decimal import Decimal
+import json
 import allure
+
+from common.saving_api import SavingApi
 
 
 @allure.feature("目标储蓄")
@@ -4723,3 +4726,1360 @@ class TestSaving:
                         f"saving_id={saving_id}，"
                         f"error={error}"
                     )
+
+    @allure.story("储蓄资金管理")
+    @allure.title("暂停储蓄目标不能取出资金")
+    def test_withdraw_paused_saving_failed(
+        self,
+        saving_api,
+        saving_factory,
+    ):
+        """
+        验证暂停状态储蓄目标不能取出资金。
+
+        后端规则：
+
+            if goal.status == SavingsGoal.Status.PAUSED:
+                raise BusinessException(
+                    "储蓄目标已暂停，无法取出资金"
+                )
+        """
+
+        saving_id = None
+
+        target_amount = Decimal("10000.00")
+        deposit_amount = Decimal("500.00")
+        withdraw_amount = Decimal("200.00")
+
+        try:
+
+            # ==============================
+            # 创建储蓄目标
+            # ==============================
+
+            payload = saving_factory.build_saving(
+                target_amount=str(target_amount),
+                current_amount="0.00",
+                deadline="2027-12-31",
+            )
+
+            response = saving_api.create_saving(payload)
+
+            assert response.status_code == 200
+
+            result = response.json()
+
+            assert result["code"] == 200
+
+            saving_id = result["data"]["id"]
+
+            # ==============================
+            # 存入500元
+            # ==============================
+
+            deposit_response = saving_api.deposit(
+                saving_id,
+                {
+                    "amount": str(deposit_amount),
+                    "note": "暂停取出测试前置数据",
+                },
+            )
+
+            assert deposit_response.status_code == 200
+
+            assert deposit_response.json()["code"] == 200
+
+            # ==============================
+            # 暂停目标
+            # ==============================
+
+            pause_response = saving_api.pause(saving_id)
+
+            assert pause_response.status_code == 200
+
+            assert pause_response.json()["code"] == 200
+
+            # ==============================
+            # 查询暂停前流水
+            # ==============================
+
+            before_records_response = saving_api.get_records(saving_id)
+
+            assert before_records_response.status_code == 200
+
+            before_records = before_records_response.json().get("data", [])
+
+            if isinstance(before_records, dict):
+                before_records = before_records.get("results", [])
+
+            before_count = len(before_records)
+
+            # ==============================
+            # 尝试取出资金
+            # ==============================
+
+            withdraw_response = saving_api.withdraw(
+                saving_id,
+                {
+                    "amount": str(withdraw_amount),
+                    "note": "暂停目标尝试取出",
+                },
+            )
+
+            # ==============================
+            # 验证失败
+            # ==============================
+
+            assert withdraw_response.status_code == 400, withdraw_response.text
+
+            withdraw_result = withdraw_response.json()
+
+            assert withdraw_result["code"] == 400
+
+            assert "储蓄目标已暂停" in withdraw_result["message"]
+
+            # ==============================
+            # 查询余额
+            # ==============================
+
+            detail_response = saving_api.get_saving_detail(saving_id)
+
+            assert detail_response.status_code == 200
+
+            detail = detail_response.json()["data"]
+
+            # ==============================
+            # 验证余额没有变化
+            # ==============================
+
+            assert Decimal(str(detail["current_amount"])) == deposit_amount
+
+            # ==============================
+            # 验证状态仍暂停
+            # ==============================
+
+            assert detail["status"] == "paused"
+
+            # ==============================
+            # 验证没有新增流水
+            # ==============================
+
+            after_records_response = saving_api.get_records(saving_id)
+
+            after_records = after_records_response.json().get("data", [])
+
+            if isinstance(after_records, dict):
+                after_records = after_records.get("results", [])
+
+            assert len(after_records) == before_count
+
+            print("暂停取出响应：", withdraw_result)
+
+        finally:
+
+            if saving_id:
+
+                try:
+
+                    saving_api.delete_saving(saving_id)
+
+                except Exception as e:
+
+                    print("清理失败:", e)
+
+    @allure.story("储蓄目标查询")
+    @allure.title("查询储蓄目标列表成功")
+    def test_get_saving_list_success(
+        self,
+        saving_api,
+        saving_factory,
+    ):
+        """
+        验证查询储蓄目标列表成功。
+
+        测试流程：
+
+        1. 创建测试储蓄目标；
+        2. 调用列表接口；
+        3. 验证接口返回成功；
+        4. 验证返回列表结构；
+        5. 验证创建的数据存在；
+        6. 清理测试数据。
+        """
+
+        saving_id = None
+
+        target_name = "自动化测试储蓄目标"
+
+        target_amount = Decimal("5000.00")
+
+        try:
+
+            # ==============================
+            # 创建测试目标
+            # ==============================
+
+            with allure.step("创建储蓄目标"):
+
+                payload = saving_factory.build_saving(
+                    name=target_name,
+                    target_amount=str(target_amount),
+                    current_amount="0.00",
+                    deadline="2027-12-31",
+                )
+
+                response = saving_api.create_saving(payload)
+
+                assert response.status_code == 200, response.text
+
+                result = response.json()
+
+                assert result.get("code") == 200, result
+
+                saving_id = result["data"]["id"]
+
+            # ==============================
+            # 查询列表
+            # ==============================
+
+            with allure.step("查询储蓄目标列表"):
+
+                list_response = saving_api.get_saving_list()
+
+                assert list_response.status_code == 200, list_response.text
+
+                list_result = list_response.json()
+
+                assert list_result.get("code") == 200, list_result
+
+            # ==============================
+            # 获取列表数据
+            # ==============================
+
+            data = list_result.get("data")
+
+            assert data is not None, list_result
+
+            # 兼容分页
+            if isinstance(data, dict):
+
+                results = data.get("results", [])
+
+            else:
+
+                results = data
+
+            assert isinstance(results, list), f"列表结构错误:{list_result}"
+
+            # ==============================
+            # 验证创建目标存在
+            # ==============================
+
+            ids = [item.get("id") for item in results]
+
+            assert saving_id in ids, f"创建目标未出现在列表:" f"{results}"
+
+            # ==============================
+            # 找到目标详情
+            # ==============================
+
+            target = next(
+                (item for item in results if item.get("id") == saving_id),
+                None,
+            )
+
+            assert target is not None
+
+            # ==============================
+            # 验证字段
+            # ==============================
+
+            assert target.get("name") == target_name
+
+            assert Decimal(str(target.get("target_amount"))) == target_amount
+
+            print("列表查询结果:", target)
+
+        finally:
+
+            if saving_id:
+
+                try:
+
+                    saving_api.delete_saving(saving_id)
+
+                except Exception as e:
+
+                    print("清理失败:", e)
+
+    @allure.story("储蓄目标权限")
+    @allure.title("不同用户不能查看其他用户储蓄目标")
+    def test_saving_list_user_isolation(
+        self,
+        saving_api,
+        saving_factory,
+        another_auth_client,
+        config,
+    ):
+        """
+        验证储蓄目标用户隔离。
+
+        测试流程：
+
+        1. 当前用户创建储蓄目标；
+        2. 切换另一个用户；
+        3. 查询储蓄列表；
+        4. 验证不能看到其他用户目标。
+        """
+        another_saving_api = SavingApi(
+            client=another_auth_client,
+            api_prefix=config.api_prefix,
+        )
+        saving_id = None
+
+        try:
+
+            # ==============================
+            # 用户A创建目标
+            # ==============================
+
+            with allure.step("用户A创建储蓄目标"):
+
+                payload = saving_factory.build_saving(
+                    name="用户A私有目标",
+                    target_amount="1000.00",
+                    current_amount="0.00",
+                    deadline="2027-12-31",
+                )
+
+                response = saving_api.create_saving(payload)
+
+                assert response.status_code == 200
+
+                result = response.json()
+
+                assert result["code"] == 200
+
+                saving_id = result["data"]["id"]
+
+            # ==============================
+            # 用户B查询列表
+            # ==============================
+
+            with allure.step("用户B查询储蓄列表"):
+
+                response = another_saving_api.get_saving_list()
+
+                assert response.status_code == 200
+
+                result = response.json()
+
+                assert result["code"] == 200
+
+            # ==============================
+            # 获取列表
+            # ==============================
+
+            data = result.get("data")
+
+            if isinstance(data, dict):
+                goals = data.get("results", [])
+
+            else:
+                goals = data
+
+            assert isinstance(goals, list)
+
+            # ==============================
+            # 验证不存在用户A目标
+            # ==============================
+
+            ids = [item.get("id") for item in goals]
+
+            assert saving_id not in ids, (
+                f"存在数据泄露:" f"userB看到了userA目标" f"{goals}"
+            )
+
+        finally:
+
+            if saving_id:
+
+                try:
+
+                    saving_api.delete_saving(saving_id)
+
+                except Exception as e:
+
+                    print("清理失败:", e)
+
+    @allure.story("储蓄目标权限")
+    @allure.title("不同用户不能查看其他用户储蓄目标详情")
+    def test_saving_detail_user_isolation(
+        self,
+        saving_api,
+        saving_factory,
+        another_auth_client,
+        config,
+    ):
+        """
+        验证储蓄目标详情用户隔离。
+
+        流程：
+
+        1. 用户A创建目标；
+        2. 用户B访问详情；
+        3. 验证无法查看。
+        """
+
+        saving_id = None
+
+        try:
+
+            # ==============================
+            # 创建用户B接口
+            # ==============================
+
+            another_saving_api = SavingApi(
+                client=another_auth_client,
+                api_prefix=config.api_prefix,
+            )
+
+            # ==============================
+            # 用户A创建目标
+            # ==============================
+
+            payload = saving_factory.build_saving(
+                name="用户A详情隔离目标",
+                target_amount="2000.00",
+                current_amount="0.00",
+                deadline="2027-12-31",
+            )
+
+            response = saving_api.create_saving(payload)
+
+            assert response.status_code == 200
+
+            result = response.json()
+
+            assert result["code"] == 200
+
+            saving_id = result["data"]["id"]
+
+            # ==============================
+            # 用户B访问详情
+            # ==============================
+
+            response = another_saving_api.get_saving_detail(saving_id)
+
+            assert response.status_code == 400, response.text
+
+            result = response.json()
+
+            assert result["code"] == 400
+
+            assert "不存在" in result["message"]
+
+        finally:
+
+            if saving_id:
+
+                try:
+
+                    saving_api.delete_saving(saving_id)
+
+                except Exception as e:
+
+                    print("清理失败:", e)
+
+    @allure.story("储蓄目标删除")
+    @allure.title("删除后的储蓄目标不再显示在列表")
+    def test_deleted_saving_not_in_list(
+        self,
+        saving_api,
+        saving_factory,
+    ):
+        """
+        验证软删除后的储蓄目标不会出现在列表。
+
+        测试流程：
+
+        1. 创建储蓄目标；
+        2. 删除储蓄目标；
+        3. 查询列表；
+        4. 验证目标不存在。
+
+        """
+
+        saving_id = None
+
+        try:
+
+            # ==================================
+            # 创建目标
+            # ==================================
+
+            with allure.step("创建测试储蓄目标"):
+
+                payload = saving_factory.build_saving(
+                    name="自动化测试删除隐藏目标",
+                    target_amount="3000.00",
+                    current_amount="0.00",
+                    deadline="2027-12-31",
+                )
+
+                response = saving_api.create_saving(payload)
+
+                assert response.status_code == 200, response.text
+
+                result = response.json()
+
+                assert result.get("code") == 200
+
+                saving_id = result["data"]["id"]
+
+            # ==================================
+            # 删除目标
+            # ==================================
+
+            with allure.step("删除储蓄目标"):
+
+                delete_response = saving_api.delete_saving(saving_id)
+
+                assert delete_response.status_code == 200, delete_response.text
+
+                delete_result = delete_response.json()
+
+                assert delete_result.get("code") == 200
+
+            # ==================================
+            # 查询列表
+            # ==================================
+
+            with allure.step("查询储蓄目标列表"):
+
+                list_response = saving_api.get_saving_list()
+
+                assert list_response.status_code == 200, list_response.text
+
+                list_result = list_response.json()
+
+                assert list_result.get("code") == 200
+
+            # ==================================
+            # 获取列表数据
+            # ==================================
+
+            data = list_result.get("data")
+
+            if isinstance(data, dict):
+                goals = data.get("results", [])
+
+            else:
+                goals = data
+
+            assert isinstance(goals, list)
+
+            # ==================================
+            # 验证不存在
+            # ==================================
+
+            ids = [item.get("id") for item in goals]
+
+            assert saving_id not in ids, f"删除后的目标仍存在列表：" f"{goals}"
+
+        finally:
+
+            # ==================================
+            # 清理
+            # ==================================
+
+            # 已删除目标无需再次删除。
+            pass
+
+    @allure.story("储蓄流水")
+    @allure.title("查询储蓄流水包含存入和取出记录")
+    def test_saving_records_success(
+        self,
+        saving_api,
+        saving_factory,
+    ):
+        """
+        验证储蓄流水完整记录。
+
+        流程：
+
+        1. 创建储蓄目标；
+        2. 存入500；
+        3. 取出200；
+        4. 查询流水；
+        5. 验证存入记录；
+        6. 验证取出记录。
+
+        """
+
+        saving_id = None
+
+        try:
+
+            # ==================================
+            # 创建目标
+            # ==================================
+
+            with allure.step("创建储蓄目标"):
+
+                payload = saving_factory.build_saving(
+                    name="自动化流水测试目标",
+                    target_amount="5000.00",
+                    current_amount="0.00",
+                    deadline="2027-12-31",
+                )
+
+                response = saving_api.create_saving(payload)
+
+                assert response.status_code == 200
+
+                result = response.json()
+
+                assert result["code"] == 200
+
+                saving_id = result["data"]["id"]
+
+            # ==================================
+            # 存入资金
+            # ==================================
+
+            with allure.step("存入500元"):
+
+                deposit_response = saving_api.deposit(
+                    saving_id,
+                    {
+                        "amount": "500.00",
+                        "note": "流水测试存入",
+                    },
+                )
+
+                assert deposit_response.status_code == 200
+
+            # ==================================
+            # 取出资金
+            # ==================================
+
+            with allure.step("取出200元"):
+
+                withdraw_response = saving_api.withdraw(
+                    saving_id,
+                    {
+                        "amount": "200.00",
+                        "note": "流水测试取出",
+                    },
+                )
+
+                assert withdraw_response.status_code == 200
+
+            # ==================================
+            # 查询流水
+            # ==================================
+
+            with allure.step("查询储蓄流水"):
+
+                records_response = saving_api.get_records(saving_id)
+
+                assert records_response.status_code == 200
+
+                records_result = records_response.json()
+
+                assert records_result["code"] == 200
+
+            # ==================================
+            # 获取流水数据
+            # ==================================
+
+            records = records_result.get("data")
+
+            if isinstance(records, dict):
+                records = records.get("results", [])
+
+            assert isinstance(records, list)
+
+            assert len(records) == 2
+
+            # ==================================
+            # 查找存入流水
+            # ==================================
+
+            deposit_record = next(
+                (item for item in records if item.get("record_type") == "deposit"),
+                None,
+            )
+
+            assert deposit_record is not None
+
+            assert deposit_record["amount"] == "500.00"
+
+            assert deposit_record["before_amount"] == "0.00"
+
+            assert deposit_record["after_amount"] == "500.00"
+
+            # ==================================
+            # 查找取出流水
+            # ==================================
+
+            withdraw_record = next(
+                (item for item in records if item.get("record_type") == "withdraw"),
+                None,
+            )
+
+            assert withdraw_record is not None
+
+            assert withdraw_record["amount"] == "200.00"
+
+            assert withdraw_record["before_amount"] == "500.00"
+
+            assert withdraw_record["after_amount"] == "300.00"
+
+        finally:
+
+            if saving_id:
+
+                try:
+
+                    saving_api.delete_saving(saving_id)
+
+                except Exception as e:
+
+                    print("清理失败:", e)
+
+    @allure.story("储蓄统计")
+    @allure.title("查询储蓄汇总数据正确")
+    def test_saving_summary_success(
+        self,
+        saving_api,
+        saving_factory,
+    ):
+        """
+        验证储蓄汇总接口。
+
+        流程：
+
+        1. 创建两个储蓄目标；
+        2. 一个进行中；
+        3. 一个完成；
+        4. 查询汇总；
+        5. 验证统计数据。
+
+        """
+
+        saving_ids = []
+
+        try:
+            # ==================================
+            # 查询测试前汇总
+            # ==================================
+
+            before_summary_response = saving_api.get_summary()
+
+            assert before_summary_response.status_code == 200
+
+            before_summary_result = before_summary_response.json()
+
+            assert before_summary_result["code"] == 200
+
+            before_summary = before_summary_result["data"]
+            # ==================================
+            # 创建进行中目标
+            # ==================================
+
+            with allure.step("创建进行中储蓄目标"):
+
+                payload = saving_factory.build_saving(
+                    name="汇总测试目标1",
+                    target_amount="10000.00",
+                    current_amount="0.00",
+                    deadline="2027-12-31",
+                )
+
+                response = saving_api.create_saving(payload)
+
+                assert response.status_code == 200
+
+                result = response.json()
+
+                assert result["code"] == 200
+
+                saving_ids.append(result["data"]["id"])
+
+            # ==================================
+            # 创建完成目标
+            # ==================================
+
+            with allure.step("创建完成储蓄目标"):
+
+                payload = saving_factory.build_saving(
+                    name="汇总测试完成目标",
+                    target_amount="5000.00",
+                    current_amount="0.00",
+                    deadline="2027-12-31",
+                )
+
+                response = saving_api.create_saving(payload)
+
+                assert response.status_code == 200
+
+                result = response.json()
+
+                completed_id = result["data"]["id"]
+
+                saving_ids.append(completed_id)
+
+            # ==================================
+            # 存入完成金额
+            # ==================================
+
+            with allure.step("存入完成目标资金"):
+
+                response = saving_api.deposit(
+                    completed_id,
+                    {
+                        "amount": "5000.00",
+                        "note": "汇总测试完成",
+                    },
+                )
+
+                assert response.status_code == 200
+            # ==================================
+            # 验证自动完成状态
+            # ==================================
+
+            with allure.step("验证目标自动完成"):
+
+                detail_response = saving_api.get_saving_detail(completed_id)
+
+                assert detail_response.status_code == 200
+
+                detail_result = detail_response.json()
+
+                assert detail_result["code"] == 200
+
+                assert detail_result["data"]["status"] == "completed"
+
+            # ==================================
+            # 查询汇总
+            # ==================================
+
+            with allure.step("查询储蓄汇总"):
+
+                response = saving_api.get_summary()
+
+                assert response.status_code == 200
+
+                result = response.json()
+
+                assert result["code"] == 200
+
+            summary = result["data"]
+
+            assert summary is not None
+
+            # ==================================
+            # 验证统计变化
+            # ==================================
+
+            assert summary["total_count"] == before_summary["total_count"] + 2
+
+            assert summary["active_count"] == before_summary["active_count"] + 1
+
+            assert summary["completed_count"] == before_summary["completed_count"] + 1
+
+            assert summary["paused_count"] == before_summary["paused_count"]
+
+            assert Decimal(summary["total_target_amount"]) == Decimal(
+                before_summary["total_target_amount"]
+            ) + Decimal("15000.00")
+
+            assert Decimal(summary["total_current_amount"]) == Decimal(
+                before_summary["total_current_amount"]
+            ) + Decimal("5000.00")
+
+            allure.attach(
+                json.dumps(
+                    {
+                        "before_summary": before_summary,
+                        "after_summary": summary,
+                    },
+                    ensure_ascii=False,
+                    indent=4,
+                ),
+                name="汇总数据变化",
+                attachment_type=allure.attachment_type.JSON,
+            )
+
+        finally:
+
+            for saving_id in saving_ids:
+
+                try:
+
+                    saving_api.delete_saving(saving_id)
+
+                except Exception as e:
+
+                    print("清理失败:", e)
+
+    @allure.story("储蓄流水权限")
+    @allure.title("不同用户不能查看其他用户储蓄流水")
+    def test_saving_records_user_isolation(
+        self,
+        saving_api,
+        saving_factory,
+        another_auth_client,
+        config,
+    ):
+        """
+        验证储蓄流水用户隔离。
+
+        流程：
+
+        1. 用户A创建目标；
+        2. 用户A存入资金；
+        3. 用户B查询流水；
+        4. 验证无法查看。
+
+        """
+
+        saving_id = None
+
+        try:
+
+            another_saving_api = SavingApi(
+                client=another_auth_client,
+                api_prefix=config.api_prefix,
+            )
+
+            # ==============================
+            # 用户A创建目标
+            # ==============================
+
+            with allure.step("用户A创建储蓄目标"):
+
+                payload = saving_factory.build_saving(
+                    name="流水隔离测试",
+                    target_amount="5000.00",
+                    current_amount="0.00",
+                    deadline="2027-12-31",
+                )
+
+                response = saving_api.create_saving(payload)
+
+                assert response.status_code == 200
+
+                result = response.json()
+
+                assert result["code"] == 200
+
+                saving_id = result["data"]["id"]
+
+            # ==============================
+            # 用户A存入资金
+            # ==============================
+
+            with allure.step("用户A存入500元"):
+
+                response = saving_api.deposit(
+                    saving_id,
+                    {
+                        "amount": "500.00",
+                        "note": "用户A流水",
+                    },
+                )
+
+                assert response.status_code == 200
+
+            # ==============================
+            # 用户B查询流水
+            # ==============================
+
+            with allure.step("用户B查询流水"):
+
+                response = another_saving_api.get_records(saving_id)
+
+                assert response.status_code == 400, response.text
+
+                result = response.json()
+
+                assert result["code"] == 400
+
+        finally:
+
+            if saving_id:
+
+                try:
+
+                    saving_api.delete_saving(saving_id)
+
+                except Exception as e:
+
+                    print("清理失败:", e)
+
+    @allure.story("储蓄目标删除")
+    @allure.title("删除后的储蓄目标不能查看详情")
+    def test_deleted_saving_detail_failed(
+        self,
+        saving_api,
+        saving_factory,
+    ):
+        """
+        验证删除后的储蓄目标无法查看详情。
+
+        测试流程：
+
+        1. 创建储蓄目标；
+        2. 删除储蓄目标；
+        3. 查询详情；
+        4. 验证目标不存在。
+        """
+
+        saving_id = None
+
+        try:
+
+            # ==================================
+            # 创建储蓄目标
+            # ==================================
+
+            with allure.step("创建储蓄目标"):
+
+                payload = saving_factory.build_saving(
+                    name="删除详情测试目标",
+                    target_amount="3000.00",
+                    current_amount="0.00",
+                    deadline="2027-12-31",
+                )
+
+                response = saving_api.create_saving(payload)
+
+                assert response.status_code == 200, response.text
+
+                result = response.json()
+
+                assert result["code"] == 200
+
+                saving_id = result["data"]["id"]
+
+            # ==================================
+            # 删除储蓄目标
+            # ==================================
+
+            with allure.step("删除储蓄目标"):
+
+                response = saving_api.delete_saving(saving_id)
+
+                assert response.status_code == 200, response.text
+
+                result = response.json()
+
+                assert result["code"] == 200
+
+            # ==================================
+            # 查询删除后的详情
+            # ==================================
+
+            with allure.step("查询已删除储蓄目标详情"):
+
+                response = saving_api.get_saving_detail(saving_id)
+
+                # 删除后预期不存在
+                assert response.status_code == 400, (
+                    f"删除后的目标仍可访问:" f"{response.text}"
+                )
+
+                result = response.json()
+
+                assert result["code"] == 400
+
+                assert "不存在" in result["message"]
+
+        finally:
+
+            # 已删除，无需再次清理
+
+            pass
+
+    @allure.story("储蓄资金管理")
+    @allure.title("存入金额为0失败")
+    def test_deposit_zero_amount_failed(
+        self,
+        saving_api,
+        saving_factory,
+    ):
+        """
+        验证存入金额不能为0。
+        """
+
+        saving_id = None
+
+        try:
+
+            with allure.step("创建储蓄目标"):
+
+                payload = saving_factory.build_saving(
+                    name="存入0金额测试",
+                    target_amount="5000.00",
+                    current_amount="0.00",
+                    deadline="2027-12-31",
+                )
+
+                response = saving_api.create_saving(payload)
+
+                assert response.status_code == 200
+
+                result = response.json()
+
+                assert result["code"] == 200
+
+                saving_id = result["data"]["id"]
+
+            with allure.step("尝试存入0元"):
+
+                response = saving_api.deposit(
+                    saving_id,
+                    {
+                        "amount": "0.00",
+                        "note": "测试0金额",
+                    },
+                )
+
+                assert response.status_code == 400
+
+                result = response.json()
+
+                assert result["code"] == 400
+
+            with allure.step("验证金额未变化"):
+
+                detail_response = saving_api.get_saving_detail(saving_id)
+
+                detail = detail_response.json()["data"]
+
+                assert detail["current_amount"] == "0.00"
+
+        finally:
+
+            if saving_id:
+
+                saving_api.delete_saving(saving_id)
+
+    @allure.story("储蓄资金管理")
+    @allure.title("存入负数金额失败")
+    def test_deposit_negative_amount_failed(
+        self,
+        saving_api,
+        saving_factory,
+    ):
+        """
+        验证存入金额不能为负数。
+        """
+
+        saving_id = None
+
+        try:
+
+            with allure.step("创建储蓄目标"):
+
+                payload = saving_factory.build_saving(
+                    name="存入负数测试",
+                    target_amount="5000.00",
+                    current_amount="0.00",
+                    deadline="2027-12-31",
+                )
+
+                response = saving_api.create_saving(payload)
+
+                assert response.status_code == 200
+
+                result = response.json()
+
+                assert result["code"] == 200
+
+                saving_id = result["data"]["id"]
+
+            with allure.step("尝试存入负数金额"):
+
+                response = saving_api.deposit(
+                    saving_id,
+                    {
+                        "amount": "-100.00",
+                        "note": "测试负数金额",
+                    },
+                )
+
+                assert response.status_code == 400
+
+                result = response.json()
+
+                assert result["code"] == 400
+
+            with allure.step("验证余额未变化"):
+
+                detail_response = saving_api.get_saving_detail(saving_id)
+
+                detail = detail_response.json()["data"]
+
+                assert detail["current_amount"] == "0.00"
+
+        finally:
+
+            if saving_id:
+
+                saving_api.delete_saving(saving_id)
+
+    @allure.story("储蓄资金管理")
+    @allure.title("取出0金额失败")
+    def test_withdraw_zero_amount_failed(
+        self,
+        saving_api,
+        saving_factory,
+    ):
+        """
+        验证取出金额不能为0。
+        """
+
+        saving_id = None
+
+        try:
+
+            with allure.step("创建储蓄目标"):
+
+                payload = saving_factory.build_saving(
+                    name="取出0金额测试",
+                    target_amount="5000.00",
+                    current_amount="0.00",
+                    deadline="2027-12-31",
+                )
+
+                response = saving_api.create_saving(payload)
+
+                assert response.status_code == 200
+
+                result = response.json()
+
+                assert result["code"] == 200
+
+                saving_id = result["data"]["id"]
+
+            with allure.step("存入500元准备测试"):
+
+                response = saving_api.deposit(
+                    saving_id,
+                    {
+                        "amount": "500.00",
+                        "note": "准备取出测试",
+                    },
+                )
+
+                assert response.status_code == 200
+
+            with allure.step("尝试取出0元"):
+
+                response = saving_api.withdraw(
+                    saving_id,
+                    {
+                        "amount": "0.00",
+                        "note": "测试0金额",
+                    },
+                )
+
+                assert response.status_code == 400
+
+                result = response.json()
+
+                assert result["code"] == 400
+
+            with allure.step("验证余额未变化"):
+
+                detail_response = saving_api.get_saving_detail(saving_id)
+
+                detail = detail_response.json()["data"]
+
+                assert detail["current_amount"] == "500.00"
+
+        finally:
+
+            if saving_id:
+
+                saving_api.delete_saving(saving_id)
+
+    @allure.story("储蓄资金管理")
+    @allure.title("取出负数金额失败")
+    def test_withdraw_negative_amount_failed(
+        self,
+        saving_api,
+        saving_factory,
+    ):
+        """
+        验证取出金额不能为负数。
+        """
+
+        saving_id = None
+
+        try:
+
+            with allure.step("创建储蓄目标"):
+
+                payload = saving_factory.build_saving(
+                    name="取出负数测试",
+                    target_amount="5000.00",
+                    current_amount="0.00",
+                    deadline="2027-12-31",
+                )
+
+                response = saving_api.create_saving(payload)
+
+                assert response.status_code == 200
+
+                result = response.json()
+
+                assert result["code"] == 200
+
+                saving_id = result["data"]["id"]
+
+            with allure.step("存入500元准备测试"):
+
+                response = saving_api.deposit(
+                    saving_id,
+                    {
+                        "amount": "500.00",
+                        "note": "准备负数取出测试",
+                    },
+                )
+
+                assert response.status_code == 200
+
+            with allure.step("尝试取出负数金额"):
+
+                response = saving_api.withdraw(
+                    saving_id,
+                    {
+                        "amount": "-100.00",
+                        "note": "测试负数取出",
+                    },
+                )
+
+                assert response.status_code == 400
+
+                result = response.json()
+
+                assert result["code"] == 400
+
+            with allure.step("验证余额未变化"):
+
+                detail_response = saving_api.get_saving_detail(saving_id)
+
+                detail = detail_response.json()["data"]
+
+                assert detail["current_amount"] == "500.00"
+
+        finally:
+
+            if saving_id:
+
+                saving_api.delete_saving(saving_id)

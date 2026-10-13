@@ -145,3 +145,22 @@ class Config:
             "test_user",
             {},
         )
+
+    @property
+    def test_user2(
+        self,
+    ) -> dict:
+        """
+        获取第二个测试账号配置。
+
+        用于：
+
+        1. 用户数据隔离测试；
+        2. 权限测试；
+        3. 多用户业务场景测试。
+        """
+
+        return self._config.get(
+            "test_user2",
+            {},
+        )

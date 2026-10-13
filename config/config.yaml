@@ -59,3 +59,7 @@ request:
 test_user:
   username: "test001"
   password: "Test@123456"
+
+test_user2:
+  username: test002
+  password: "Test@123456"
