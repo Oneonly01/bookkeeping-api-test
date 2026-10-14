@@ -5,6 +5,7 @@ from common.auth_api import AuthApi
 from common.budget_api import BudgetApi
 from common.category_api import CategoryApi
 from common.saving_api import SavingApi
+from common.user_api import UserApi
 from utils.request import RequestClient
 from common.tag_api import TagApi
 from common.transaction_api import TransactionApi
@@ -15,6 +16,7 @@ from utils.data_factory import (
     SavingDataFactory,
     TagDataFactory,
     TransactionDataFactory,
+    UserDataFactory,
 )
 
 
@@ -1503,3 +1505,47 @@ def saving_factory():
     """
 
     return SavingDataFactory
+
+
+@pytest.fixture(scope="session")
+def user_factory():
+    """
+    提供用户测试数据工厂。
+
+    测试中使用：
+
+    user_factory.build_register()
+
+    生成注册数据。
+    """
+
+    return UserDataFactory
+
+
+@pytest.fixture(scope="session")
+def user_api(
+    auth_client,
+    config,
+):
+    """
+    提供用户业务接口。
+
+
+    auth_client：
+
+    已经设置 Access Token。
+
+
+    所以调用用户接口时：
+
+    自动携带：
+
+    Authorization:
+        Bearer token
+
+    """
+
+    return UserApi(
+        client=auth_client,
+        api_prefix=config.api_prefix,
+    )

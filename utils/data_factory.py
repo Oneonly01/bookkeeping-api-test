@@ -249,6 +249,146 @@ class AccountDataFactory:
         )
 
 
+class UserDataFactory:
+    """
+    用户模块测试数据工厂。
+
+    主要作用：
+
+    1. 统一生成用户测试数据；
+    2. 避免测试代码中写死账号；
+    3. 避免重复注册导致用户名冲突；
+    4. 支持注册、用户信息修改等测试场景。
+
+    当前支持：
+
+    1. 用户注册数据生成；
+    """
+
+    # ==========================================
+    # 默认测试密码
+    # ==========================================
+
+    DEFAULT_PASSWORD = "Test@123456"
+
+    # ==========================================
+    # 生成唯一用户名
+    # ==========================================
+
+    @staticmethod
+    def generate_username():
+        """
+        生成唯一用户名。
+
+        使用随机字符串，
+        防止自动化测试重复执行时：
+
+        用户名已存在。
+
+        示例：
+
+        pytest_user_a1b2c3d4
+        """
+
+        return "pytest_user_" + uuid.uuid4().hex[:8]
+
+    # ==========================================
+    # 生成唯一邮箱
+    # ==========================================
+
+    @staticmethod
+    def generate_email():
+        """
+        生成唯一邮箱。
+
+        示例：
+
+        pytest_a1b2c3d4@example.com
+        """
+
+        return "pytest_" + uuid.uuid4().hex[:8] + "@example.com"
+
+    # ==========================================
+    # 生成唯一手机号
+    # ==========================================
+
+    @staticmethod
+    def generate_phone():
+        """
+        生成测试手机号。
+
+        这里只用于测试环境。
+
+        """
+
+        return "138" + str(uuid.uuid4().int)[:8]
+
+    # ==========================================
+    # 构造注册请求数据
+    # ==========================================
+
+    @classmethod
+    def build_register(
+        cls,
+        password=None,
+        **kwargs,
+    ):
+        """
+        构造用户注册请求参数。
+
+
+        返回：
+
+        {
+            username,
+            email,
+            phone,
+            nickname,
+            password,
+            confirm_password
+        }
+
+
+        password:
+
+            如果不传，
+            使用默认测试密码。
+
+
+        kwargs:
+
+            支持测试用例覆盖字段。
+
+            例如：
+
+            nickname="测试用户"
+
+        """
+
+        password = password or cls.DEFAULT_PASSWORD
+
+        # ======================================
+        # 基础注册字段
+        # ======================================
+
+        payload = {
+            "username": cls.generate_username(),
+            "email": cls.generate_email(),
+            "phone": cls.generate_phone(),
+            "nickname": "pytest测试用户",
+            "password": password,
+            "confirm_password": password,
+        }
+
+        # ======================================
+        # 支持测试覆盖字段
+        # ======================================
+
+        payload.update(kwargs)
+
+        return payload
+
+
 class TransactionDataFactory:
     """
     账单模块测试数据工厂。

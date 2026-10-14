@@ -3,6 +3,8 @@ from pathlib import Path
 import allure
 import pytest
 
+from common.transaction_api import TransactionApi
+
 
 @allure.feature("账单管理")
 class TestTransaction:
@@ -12,6 +14,7 @@ class TestTransaction:
 
     @allure.story("新增账单")
     @allure.title("新增支出账单成功")
+    @allure.feature("账单模块")
     def test_create_expense_transaction_success(
         self,
         account_api,
@@ -449,6 +452,7 @@ class TestTransaction:
 
     @allure.story("新增账单")
     @allure.title("新增收入账单成功")
+    @allure.feature("账单模块")
     def test_create_income_transaction_success(
         self,
         account_api,
@@ -781,6 +785,7 @@ class TestTransaction:
 
     @allure.story("账单详情")
     @allure.title("查询账单详情成功")
+    @allure.feature("账单模块")
     def test_transaction_detail_success(
         self,
         transaction_api,
@@ -1064,6 +1069,7 @@ class TestTransaction:
 
     @allure.story("修改账单")
     @allure.title("修改账单成功")
+    @allure.feature("账单模块")
     def test_update_transaction_success(
         self,
         account_api,
@@ -1494,6 +1500,7 @@ class TestTransaction:
 
     @allure.story("删除账单")
     @allure.title("删除账单成功并恢复账户余额")
+    @allure.feature("账单模块")
     def test_delete_transaction_success(
         self,
         account_api,
@@ -1776,6 +1783,7 @@ class TestTransaction:
 
     @allure.story("账单列表")
     @allure.title("查询账单列表成功")
+    @allure.feature("账单模块")
     def test_transaction_list_success(
         self,
         transaction_api,
@@ -2129,6 +2137,7 @@ class TestTransaction:
 
     @allure.story("账单筛选")
     @allure.title("账单条件筛选成功")
+    @allure.feature("账单模块")
     @pytest.mark.parametrize(
         ("filter_type," "expected_type"),
         [
@@ -2571,6 +2580,7 @@ class TestTransaction:
 
     @allure.story("账单搜索")
     @allure.title("根据关键词搜索账单成功")
+    @allure.feature("账单模块")
     def test_transaction_search_success(
         self,
         transaction_api,
@@ -3017,6 +3027,7 @@ class TestTransaction:
 
     @allure.story("账单筛选")
     @allure.title("按日期范围筛选账单成功")
+    @allure.feature("账单模块")
     def test_transaction_date_range_filter_success(
         self,
         transaction_api,
@@ -3348,6 +3359,7 @@ class TestTransaction:
 
     @allure.story("新增账单")
     @allure.title("新增账单异常场景")
+    @allure.feature("账单模块")
     @pytest.mark.parametrize(
         ("case_type," "amount," "expected_code"),
         [
@@ -3599,6 +3611,7 @@ class TestTransaction:
 
     @allure.story("新增账单")
     @allure.title("账单类型与分类类型不匹配时创建失败")
+    @allure.feature("账单模块")
     @pytest.mark.parametrize(
         ("transaction_type," "category_type," "expected_code"),
         [
@@ -3824,6 +3837,7 @@ class TestTransaction:
 
     @allure.story("账单分页")
     @allure.title("账单列表分页查询成功")
+    @allure.feature("账单模块")
     def test_transaction_pagination_success(
         self,
         transaction_api,
@@ -4215,6 +4229,7 @@ class TestTransaction:
 
     @allure.story("账单统计")
     @allure.title("账单汇总统计成功")
+    @allure.feature("账单模块")
     def test_transaction_summary_success(
         self,
         transaction_api,
@@ -4648,6 +4663,7 @@ class TestTransaction:
 
     @allure.story("账单统计")
     @allure.title("账单收支趋势统计成功")
+    @allure.feature("账单模块")
     def test_transaction_trend_success(
         self,
         transaction_api,
@@ -5183,6 +5199,7 @@ class TestTransaction:
 
     @allure.story("账单统计")
     @allure.title("账单分类统计成功")
+    @allure.feature("账单模块")
     def test_transaction_category_statistics_success(
         self,
         transaction_api,
@@ -5847,6 +5864,7 @@ class TestTransaction:
 
     @allure.story("账单统计")
     @allure.title("账单月度统计成功")
+    @allure.feature("账单模块")
     def test_transaction_monthly_statistics_success(
         self,
         transaction_api,
@@ -6488,6 +6506,7 @@ class TestTransaction:
 
     @allure.story("账单统计")
     @allure.title("账单年度统计成功")
+    @allure.feature("账单模块")
     def test_transaction_yearly_statistics_success(
         self,
         transaction_api,
@@ -7194,6 +7213,7 @@ class TestTransaction:
 
     @allure.story("账单标签")
     @allure.title("创建账单并绑定标签成功")
+    @allure.feature("账单模块")
     def test_create_transaction_with_tag_success(
         self,
         tag_api,
@@ -7605,6 +7625,7 @@ class TestTransaction:
 
     @allure.story("账单标签")
     @allure.title("创建账单并绑定多个标签成功")
+    @allure.feature("账单模块")
     def test_create_transaction_with_multiple_tags_success(
         self,
         tag_api,
@@ -7989,6 +8010,7 @@ class TestTransaction:
 
     @allure.story("账单标签")
     @allure.title("修改账单标签关系成功")
+    @allure.feature("账单模块")
     def test_update_transaction_tags_success(
         self,
         tag_api,
@@ -8402,6 +8424,7 @@ class TestTransaction:
 
     @allure.story("账单图片")
     @allure.title("账单图片上传查询删除成功")
+    @allure.feature("账单模块")
     def test_transaction_image_lifecycle_success(
         self,
         transaction_api,
@@ -8940,6 +8963,7 @@ class TestTransaction:
 
     @allure.story("账单图片")
     @allure.title("上传非图片文件失败")
+    @allure.feature("账单模块")
     def test_upload_transaction_invalid_file_failed(
         self,
         transaction_api,
@@ -9102,6 +9126,7 @@ class TestTransaction:
 
     @allure.story("账单图片")
     @allure.title("上传损坏图片失败")
+    @allure.feature("账单模块")
     def test_upload_transaction_corrupted_image_failed(
         self,
         transaction_api,
@@ -9321,6 +9346,7 @@ class TestTransaction:
 
     @allure.story("账单图片")
     @allure.title("给不存在的账单上传图片失败")
+    @allure.feature("账单模块")
     def test_upload_image_to_nonexistent_transaction_failed(
         self,
         transaction_api,
@@ -9464,3 +9490,895 @@ class TestTransaction:
                 f"不应该返回有效 image_id："
                 f"{response_data}"
             )
+
+    @allure.story("新增账单")
+    @allure.title("新增账单金额为0创建失败")
+    @allure.feature("账单模块")
+    def test_create_transaction_zero_amount_failed(
+        self,
+        transaction_api,
+        transaction_factory,
+        transaction_context,
+        account_api,
+    ):
+        """
+        验证账单金额为0时创建失败。
+
+        测试规则：
+
+        1. 金额必须大于0；
+        2. amount=0 不允许创建；
+        3. 创建失败后账户余额不能变化；
+        4. 不应该产生账单数据。
+        """
+
+        # ======================================
+        # 获取测试账户
+        # ======================================
+
+        account = transaction_context.get(
+            "account",
+            {},
+        )
+
+        account_id = account.get("id")
+
+        assert account_id, f"未获取到账户ID:" f"{transaction_context}"
+
+        # ======================================
+        # 获取支出分类
+        # ======================================
+
+        expense_category = transaction_context.get(
+            "expense_category",
+            {},
+        )
+
+        category_id = expense_category.get("id")
+
+        assert category_id, f"未获取到支出分类:" f"{transaction_context}"
+
+        # ======================================
+        # 查询创建前余额
+        # ======================================
+
+        before_response = account_api.get_account_detail(account_id)
+
+        assert before_response.status_code == 200
+
+        before_balance = before_response.json().get("data", {}).get("balance")
+
+        # ======================================
+        # 构造金额为0的数据
+        # ======================================
+
+        payload = transaction_factory.build_expense(
+            account_id=account_id,
+            category_id=category_id,
+            amount="0.00",
+            note="自动化测试-金额0",
+        )
+
+        # ======================================
+        # 调用创建接口
+        # ======================================
+
+        response = transaction_api.create_transaction(payload)
+
+        # ======================================
+        # 状态码校验
+        # ======================================
+
+        assert response.status_code in [
+            400,
+            422,
+        ], (
+            f"金额为0应该失败:" f"{response.status_code}" f"{response.text}"
+        )
+
+        result = response.json()
+
+        # ======================================
+        # 业务失败校验
+        # ======================================
+
+        assert result.get("code") != 200, f"金额为0不应该创建成功:" f"{result}"
+
+        # ======================================
+        # 验证余额没有变化
+        # ======================================
+
+        after_response = account_api.get_account_detail(account_id)
+
+        assert after_response.status_code == 200
+
+        after_balance = after_response.json().get("data", {}).get("balance")
+
+        assert after_balance == before_balance, (
+            f"金额非法导致余额变化:"
+            f"before={before_balance},"
+            f"after={after_balance}"
+        )
+
+    @allure.story("新增账单")
+    @allure.title("新增账单金额为负数创建失败")
+    @allure.feature("账单模块")
+    def test_create_transaction_negative_amount_failed(
+        self,
+        transaction_api,
+        transaction_factory,
+        transaction_context,
+        account_api,
+    ):
+        """
+        验证账单金额不能为负数。
+
+        测试规则：
+
+        1. amount < 0 不允许创建；
+        2. 创建失败；
+        3. 账户余额不发生变化。
+        """
+
+        # ======================================
+        # 获取账户
+        # ======================================
+
+        account = transaction_context.get(
+            "account",
+            {},
+        )
+
+        account_id = account.get("id")
+
+        assert account_id
+
+        # ======================================
+        # 获取支出分类
+        # ======================================
+
+        category = transaction_context.get(
+            "expense_category",
+            {},
+        )
+
+        category_id = category.get("id")
+
+        assert category_id
+
+        # ======================================
+        # 查询创建前余额
+        # ======================================
+
+        before_response = account_api.get_account_detail(account_id)
+
+        assert before_response.status_code == 200
+
+        before_balance = before_response.json().get("data", {}).get("balance")
+
+        # ======================================
+        # 构造负数金额
+        # ======================================
+
+        payload = transaction_factory.build_expense(
+            account_id=account_id,
+            category_id=category_id,
+            amount="-100.00",
+            note="自动化测试-负数金额",
+        )
+
+        # ======================================
+        # 创建账单
+        # ======================================
+
+        response = transaction_api.create_transaction(payload)
+
+        assert response.status_code in [
+            400,
+            422,
+        ], (
+            f"负数金额应该失败:" f"{response.status_code}" f"{response.text}"
+        )
+
+        result = response.json()
+
+        assert result.get("code") != 200, f"负数金额创建成功:" f"{result}"
+
+        # ======================================
+        # 验证余额未变化
+        # ======================================
+
+        after_response = account_api.get_account_detail(account_id)
+
+        assert after_response.status_code == 200
+
+        after_balance = after_response.json().get("data", {}).get("balance")
+
+        assert after_balance == before_balance, (
+            f"非法金额导致余额变化:"
+            f"before={before_balance},"
+            f"after={after_balance}"
+        )
+
+    @allure.story("新增账单")
+    @allure.title("新增账单金额为空创建失败")
+    @allure.feature("账单模块")
+    def test_create_transaction_empty_amount_failed(
+        self,
+        transaction_api,
+        transaction_factory,
+        transaction_context,
+    ):
+        """
+        验证账单金额不能为空。
+
+        测试规则：
+
+        1. amount为空字符串；
+        2. 创建失败；
+        3. 不产生账单。
+        """
+
+        # ======================================
+        # 获取账户
+        # ======================================
+
+        account = transaction_context.get(
+            "account",
+            {},
+        )
+
+        account_id = account.get("id")
+
+        assert account_id
+
+        # ======================================
+        # 获取分类
+        # ======================================
+
+        category = transaction_context.get(
+            "expense_category",
+            {},
+        )
+
+        category_id = category.get("id")
+
+        assert category_id
+
+        # ======================================
+        # 构造空金额数据
+        # ======================================
+
+        payload = transaction_factory.build_expense(
+            account_id=account_id,
+            category_id=category_id,
+            amount="",
+            note="自动化测试-空金额",
+        )
+
+        # ======================================
+        # 调用创建接口
+        # ======================================
+
+        response = transaction_api.create_transaction(payload)
+
+        # ======================================
+        # 验证失败
+        # ======================================
+
+        assert response.status_code in [
+            400,
+            422,
+        ], (
+            f"空金额应该失败:" f"{response.status_code}" f"{response.text}"
+        )
+
+        result = response.json()
+
+        assert result.get("code") != 200
+
+    @allure.story("新增账单")
+    @allure.title("支出金额超过账户余额创建失败")
+    @allure.feature("账单模块")
+    def test_create_transaction_exceed_balance_failed(
+        self,
+        transaction_api,
+        transaction_factory,
+        transaction_context,
+        account_api,
+    ):
+        """
+        验证支出金额不能超过账户余额。
+
+        测试规则：
+
+        1. 获取当前账户余额；
+        2. 创建超过余额的支出账单；
+        3. 创建失败；
+        4. 账户余额不变化。
+        """
+
+        # ======================================
+        # 获取账户
+        # ======================================
+
+        account = transaction_context.get(
+            "account",
+            {},
+        )
+
+        account_id = account.get("id")
+
+        assert account_id
+
+        # ======================================
+        # 获取分类
+        # ======================================
+
+        category = transaction_context.get(
+            "expense_category",
+            {},
+        )
+
+        category_id = category.get("id")
+
+        assert category_id
+
+        # ======================================
+        # 查询当前余额
+        # ======================================
+
+        before_response = account_api.get_account_detail(account_id)
+
+        assert before_response.status_code == 200
+
+        before_data = before_response.json()["data"]
+
+        before_balance = before_data["balance"]
+
+        # ======================================
+        # 构造超余额金额
+        # ======================================
+
+        exceed_amount = str(Decimal(before_balance) + Decimal("1000.00"))
+
+        payload = transaction_factory.build_expense(
+            account_id=account_id,
+            category_id=category_id,
+            amount=exceed_amount,
+            note="自动化测试-余额不足",
+        )
+
+        # ======================================
+        # 创建账单
+        # ======================================
+
+        response = transaction_api.create_transaction(payload)
+
+        assert response.status_code in [
+            400,
+            422,
+        ], (
+            f"余额不足应该失败:" f"{response.status_code}" f"{response.text}"
+        )
+
+        result = response.json()
+
+        assert result.get("code") != 200
+
+        # ======================================
+        # 验证余额未变化
+        # ======================================
+
+        after_response = account_api.get_account_detail(account_id)
+
+        assert after_response.status_code == 200
+
+        after_balance = after_response.json()["data"]["balance"]
+
+        assert after_balance == before_balance, (
+            f"余额异常变化:" f"before={before_balance}," f"after={after_balance}"
+        )
+
+    @allure.story("账单权限")
+    @allure.title("不同用户不能查看其他用户账单详情")
+    @allure.feature("账单模块")
+    def test_transaction_detail_user_isolation(
+        self,
+        transaction_api,
+        transaction_factory,
+        another_auth_client,
+        transaction_context,
+    ):
+        """
+        验证账单用户隔离。
+
+        流程：
+
+        1. 用户A创建账单；
+        2. 切换用户B；
+        3. 用户B查询账单详情；
+        4. 验证无法访问。
+        """
+
+        transaction_id = None
+
+        try:
+
+            # ==================================
+            # 用户A创建账单
+            # ==================================
+
+            with allure.step("用户A创建账单"):
+
+                account = transaction_context["account"]
+
+                category = transaction_context["expense_category"]
+
+                payload = transaction_factory.build_expense(
+                    account_id=account["id"],
+                    category_id=category["id"],
+                    amount="100.00",
+                    note="用户A私有账单",
+                )
+
+                response = transaction_api.create_transaction(payload)
+
+                assert response.status_code == 200
+
+                result = response.json()
+
+                assert result["code"] == 200
+
+                transaction_id = result["data"]["id"]
+
+            # ==================================
+            # 切换用户B
+            # ==================================
+
+            with allure.step("用户B查询账单详情"):
+
+                another_api = TransactionApi(
+                    client=another_auth_client,
+                    api_prefix="/api/v1",
+                )
+
+                response = another_api.get_transaction_detail(transaction_id)
+
+                assert response.status_code in [
+                    400,
+                    403,
+                    404,
+                ]
+
+        finally:
+
+            # 用户A清理数据
+
+            if transaction_id:
+
+                try:
+
+                    transaction_api.delete_transaction(transaction_id)
+
+                except Exception as e:
+
+                    print(
+                        "清理失败:",
+                        e,
+                    )
+
+    @allure.story("账单权限")
+    @allure.title("不同用户不能查看其他用户账单列表")
+    @allure.feature("账单模块")
+    def test_transaction_list_user_isolation(
+        self,
+        config,
+        transaction_api,
+        transaction_factory,
+        transaction_context,
+        another_auth_client,
+    ):
+        """
+        验证账单列表用户隔离。
+
+        流程：
+
+        1. 用户A创建账单；
+        2. 用户B查询账单列表；
+        3. 验证不存在用户A账单。
+        """
+
+        transaction_id = None
+
+        try:
+
+            # ==================================
+            # 用户A创建账单
+            # ==================================
+
+            with allure.step("用户A创建账单"):
+
+                # ==================================
+                # 获取测试账户
+                # ==================================
+                account = transaction_context["account"]
+
+                category = transaction_context["expense_category"]
+                payload = transaction_factory.build_expense(
+                    account_id=account["id"],
+                    category_id=category["id"],
+                    amount="100.00",
+                    note="用户A私有账单",
+                )
+
+                response = transaction_api.create_transaction(payload)
+
+                assert response.status_code == 200
+
+                result = response.json()
+
+                assert result["code"] == 200
+
+                transaction_id = result["data"]["id"]
+
+            # ==================================
+            # 用户B查询列表
+            # ==================================
+
+            with allure.step("用户B查询账单列表"):
+
+                another_api = TransactionApi(
+                    client=another_auth_client,
+                    api_prefix=config.api_prefix,
+                )
+
+                response = another_api.get_transaction_list()
+
+                assert response.status_code == 200
+
+                result = response.json()
+
+                assert result["code"] == 200
+
+            # ==================================
+            # 获取列表数据
+            # ==================================
+
+            data = result["data"]
+
+            if isinstance(data, dict):
+
+                transactions = data.get(
+                    "results",
+                    [],
+                )
+
+            else:
+
+                transactions = data
+
+            ids = [item.get("id") for item in transactions]
+
+            # ==================================
+            # 验证隔离
+            # ==================================
+
+            assert transaction_id not in ids, f"存在账单数据泄露:" f"{transactions}"
+
+        finally:
+
+            if transaction_id:
+
+                try:
+
+                    transaction_api.delete_transaction(transaction_id)
+
+                except Exception as e:
+
+                    print(
+                        "清理失败:",
+                        e,
+                    )
+
+    @allure.story("账单权限")
+    @allure.title("不同用户不能修改其他用户账单")
+    @allure.feature("账单模块")
+    def test_transaction_update_user_isolation(
+        self,
+        transaction_api,
+        transaction_factory,
+        transaction_context,
+        another_auth_client,
+        config,
+    ):
+        """
+        验证账单修改用户隔离。
+
+        流程：
+
+        1. 用户A创建账单；
+        2. 用户B修改账单；
+        3. 验证修改失败；
+        4. 用户A查询确认数据未变化。
+        """
+
+        transaction_id = None
+
+        try:
+
+            # ==================================
+            # 用户A创建账单
+            # ==================================
+
+            with allure.step("用户A创建账单"):
+
+                account = transaction_context["account"]
+
+                category = transaction_context["expense_category"]
+
+                payload = transaction_factory.build_expense(
+                    account_id=account["id"],
+                    category_id=category["id"],
+                    amount="100.00",
+                    note="用户A私有账单",
+                )
+
+                response = transaction_api.create_transaction(payload)
+
+                assert response.status_code == 200
+
+                result = response.json()
+
+                assert result["code"] == 200
+
+                transaction_id = result["data"]["id"]
+
+            # ==================================
+            # 用户B修改账单
+            # ==================================
+
+            with allure.step("用户B修改账单"):
+
+                another_api = TransactionApi(
+                    client=another_auth_client,
+                    api_prefix=config.api_prefix,
+                )
+
+                update_payload = {
+                    "amount": "999.00",
+                    "note": "用户B尝试修改",
+                }
+
+                response = another_api.update_transaction(
+                    transaction_id,
+                    update_payload,
+                )
+
+                assert response.status_code in [
+                    400,
+                    403,
+                    404,
+                ]
+
+            # ==================================
+            # 用户A查询确认未修改
+            # ==================================
+
+            with allure.step("验证账单未被修改"):
+
+                detail_response = transaction_api.get_transaction_detail(transaction_id)
+
+                assert detail_response.status_code == 200
+
+                detail = detail_response.json()["data"]
+
+                assert detail["amount"] == "100.00"
+
+        finally:
+
+            if transaction_id:
+
+                try:
+
+                    transaction_api.delete_transaction(transaction_id)
+
+                except Exception as e:
+
+                    print(
+                        "清理失败:",
+                        e,
+                    )
+
+    @allure.story("账单权限")
+    @allure.title("不同用户不能删除其他用户账单")
+    @allure.feature("账单模块")
+    def test_transaction_delete_user_isolation(
+        self,
+        transaction_api,
+        transaction_factory,
+        transaction_context,
+        another_auth_client,
+        config,
+    ):
+        """
+        验证账单删除用户隔离。
+
+        流程：
+
+        1. 用户A创建账单；
+        2. 用户B删除账单；
+        3. 删除失败；
+        4. 用户A查询账单仍存在。
+        """
+
+        transaction_id = None
+
+        try:
+
+            # ==================================
+            # 用户A创建账单
+            # ==================================
+
+            with allure.step("用户A创建账单"):
+
+                account = transaction_context["account"]
+
+                category = transaction_context["expense_category"]
+
+                payload = transaction_factory.build_expense(
+                    account_id=account["id"],
+                    category_id=category["id"],
+                    amount="100.00",
+                    note="用户A私有账单",
+                )
+
+                response = transaction_api.create_transaction(payload)
+
+                assert response.status_code == 200
+
+                result = response.json()
+
+                assert result["code"] == 200
+
+                transaction_id = result["data"]["id"]
+
+            # ==================================
+            # 用户B删除账单
+            # ==================================
+
+            with allure.step("用户B尝试删除账单"):
+
+                another_api = TransactionApi(
+                    client=another_auth_client,
+                    api_prefix=config.api_prefix,
+                )
+
+                response = another_api.delete_transaction(transaction_id)
+
+                assert response.status_code in [
+                    400,
+                    403,
+                    404,
+                ]
+
+            # ==================================
+            # 用户A确认账单存在
+            # ==================================
+
+            with allure.step("验证账单仍存在"):
+
+                detail_response = transaction_api.get_transaction_detail(transaction_id)
+
+                assert detail_response.status_code == 200
+
+                detail = detail_response.json()["data"]
+
+                assert detail["id"] == transaction_id
+
+        finally:
+
+            if transaction_id:
+
+                try:
+
+                    transaction_api.delete_transaction(transaction_id)
+
+                except Exception as e:
+
+                    print(
+                        "清理失败:",
+                        e,
+                    )
+
+    @allure.story("账单异常")
+    @allure.title("查询不存在账单详情失败")
+    def test_get_nonexistent_transaction_detail_failed(
+        self,
+        transaction_api,
+    ):
+        """
+        验证查询不存在账单详情失败。
+
+        流程：
+
+        1. 查询不存在账单ID；
+        2. 验证返回失败。
+        """
+
+        with allure.step("查询不存在账单"):
+
+            response = transaction_api.get_transaction_detail(99999999)
+
+            assert response.status_code in [
+                400,
+                404,
+            ]
+
+            result = response.json()
+
+            assert result["code"] != 200
+
+    @allure.story("账单异常")
+    @allure.title("修改不存在账单失败")
+    def test_update_nonexistent_transaction_failed(
+        self,
+        transaction_api,
+    ):
+        """
+        验证修改不存在账单失败。
+
+        流程：
+
+        1. 修改不存在账单ID；
+        2. 验证失败。
+        """
+
+        payload = {
+            "amount": "200.00",
+            "note": "不存在账单修改测试",
+        }
+
+        with allure.step("修改不存在账单"):
+
+            response = transaction_api.update_transaction(
+                99999999,
+                payload,
+            )
+
+            assert response.status_code in [
+                400,
+                404,
+            ]
+
+            result = response.json()
+
+            assert result["code"] != 200
+
+    @allure.story("账单异常")
+    @allure.title("删除不存在账单失败")
+    def test_delete_nonexistent_transaction_failed(
+        self,
+        transaction_api,
+    ):
+        """
+        验证删除不存在账单失败。
+
+        流程：
+
+        1. 删除不存在账单ID；
+        2. 验证失败。
+        """
+
+        with allure.step("删除不存在账单"):
+
+            response = transaction_api.delete_transaction(99999999)
+
+            assert response.status_code in [
+                400,
+                404,
+            ]
+
+            result = response.json()
+
+            assert result["code"] != 200

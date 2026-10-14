@@ -1,6 +1,8 @@
 import allure
 import pytest
 
+from common.budget_api import BudgetApi
+
 
 @allure.feature("预算管理")
 class TestBudget:
@@ -3074,3 +3076,130 @@ class TestBudget:
             assert not data.get("id"), (
                 f"删除不存在预算失败后" f"不应该返回有效 budget_id：" f"{response_data}"
             )
+
+    @allure.story("预算权限")
+    @allure.title("不同用户不能查看其他用户预算")
+    def test_budget_list_user_isolation(
+        self,
+        budget_api,
+        budget_factory,
+        another_auth_client,
+    ):
+        """
+        验证预算用户隔离。
+
+        流程：
+
+        1. 用户A创建预算；
+        2. 用户B查询预算列表；
+        3. 验证用户B无法看到用户A预算。
+
+        """
+
+        budget_id = None
+
+        try:
+
+            # ==================================
+            # 用户A创建预算
+            # ==================================
+
+            with allure.step("用户A创建预算"):
+
+                payload = budget_factory.build_budget(
+                    budget_type="overall",
+                    year=2030,
+                    month=1,
+                    amount="1000.00",
+                    note="用户A私有预算",
+                )
+
+                response = budget_api.create_budget(payload)
+
+                assert response.status_code == 200
+
+                result = response.json()
+
+                assert result["code"] == 200
+
+                budget_id = result["data"]["id"]
+
+            # ==================================
+            # 创建用户B预算接口客户端
+            # ==================================
+
+            with allure.step("用户B查询预算列表"):
+
+                another_api = BudgetApi(
+                    client=another_auth_client,
+                    api_prefix="/api/v1",
+                )
+
+                response = another_api.get_budget_list()
+
+                assert response.status_code == 200
+
+                result = response.json()
+
+                assert result["code"] == 200
+
+            # ==================================
+            # 获取预算列表
+            # ==================================
+
+            data = result.get(
+                "data",
+                [],
+            )
+
+            if isinstance(
+                data,
+                dict,
+            ):
+
+                budgets = data.get(
+                    "results",
+                    [],
+                )
+
+            else:
+
+                budgets = data
+
+            assert isinstance(
+                budgets,
+                list,
+            )
+
+            # ==================================
+            # 提取预算ID
+            # ==================================
+
+            budget_ids = [item.get("id") for item in budgets]
+
+            # ==================================
+            # 验证用户隔离
+            # ==================================
+
+            assert budget_id not in budget_ids, (
+                f"存在预算数据泄露:" f"用户B查看到了用户A预算:" f"{budgets}"
+            )
+
+        finally:
+
+            # ==================================
+            # 清理用户A测试数据
+            # ==================================
+
+            if budget_id:
+
+                try:
+
+                    budget_api.delete_budget(budget_id)
+
+                except Exception as e:
+
+                    print(
+                        "预算清理失败:",
+                        e,
+                    )
