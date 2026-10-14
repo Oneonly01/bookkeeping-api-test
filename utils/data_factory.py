@@ -645,6 +645,10 @@ class TagDataFactory:
     避免测试代码中重复写固定名称。
     """
 
+    # ==================================
+    # 生成唯一标签名称
+    # ==================================
+
     @staticmethod
     def generate_tag_name(
         prefix="自动化测试标签",
@@ -655,9 +659,14 @@ class TagDataFactory:
         示例：
 
         自动化测试标签_a1b2c3d4
+
         """
 
         return f"{prefix}_" f"{uuid.uuid4().hex[:8]}"
+
+    # ==================================
+    # 构造标签创建参数
+    # ==================================
 
     @classmethod
     def build_tag(
@@ -667,10 +676,29 @@ class TagDataFactory:
     ):
         """
         构造标签创建请求数据。
+
+
+        name:
+
+            不传：
+            自动生成唯一名称。
+
+
+            传入：
+            使用指定名称。
+
+
+            注意：
+
+            不能使用 name or xxx
+
+            因为空字符串需要用于异常测试。
+
+
         """
 
         payload = {
-            "name": (name or cls.generate_tag_name()),
+            "name": (cls.generate_tag_name() if name is None else name),
         }
 
         payload.update(kwargs)
@@ -867,4 +895,172 @@ class SavingDataFactory:
 
         payload.update(kwargs)
 
+        return payload
+
+
+# ======================================
+# 分类测试数据工厂
+# ======================================
+
+
+class CategoryDataFactory:
+    """
+    分类模块测试数据生成器。
+
+    主要职责：
+
+    1. 生成唯一分类名称；
+    2. 构造分类新增请求参数；
+    3. 提供测试过程中需要的分类数据。
+
+    使用场景：
+
+    - 创建分类成功；
+    - 分类重复校验；
+    - 分类修改测试；
+    - 分类删除测试。
+
+
+    """
+
+    # ==================================
+    # 生成唯一分类名称
+    # ==================================
+
+    @staticmethod
+    def generate_name():
+        """
+        生成唯一分类名称。
+
+
+        为什么需要动态生成：
+
+        测试环境数据库数据不会自动清理。
+
+        如果使用固定名称：
+
+        例如：
+
+        自动化测试分类
+
+
+        多次执行测试时可能触发：
+
+        已存在同名分类
+
+
+        所以使用 uuid 保证每次唯一。
+
+
+        """
+
+        import uuid
+
+        return "自动化测试分类_" + str(uuid.uuid4())[:8]
+
+    # ==================================
+    # 构造分类创建参数
+    # ==================================
+
+    @classmethod
+    def build_category(
+        cls,
+        name=None,
+        category_type="expense",
+    ):
+        """
+        构造创建分类请求参数。
+
+
+        默认创建：
+
+        支出分类。
+
+
+        参数：
+
+        name:
+            分类名称。
+
+            不传时自动生成。
+
+
+        category_type:
+
+            分类类型：
+
+            expense:
+                支出分类
+
+
+            income:
+                收入分类
+
+
+        """
+
+        # ==================================
+        # 分类名称
+        # ==================================
+
+        if name is None:
+
+            name = cls.generate_name()
+
+        # ==================================
+        # 返回请求参数
+        # ==================================
+
+        return {
+            # 分类名称
+            "name": name,
+            # 分类类型
+            "category_type": category_type,
+            # 图标
+            "icon": "",
+            # 颜色
+            "color": "",
+            # 排序值
+            #
+            # 后端限制：
+            #
+            # min_value=0
+            #
+            "sort_order": 0,
+        }
+
+
+class ProductDataFactory:
+    """构造每次运行都不重名的商品测试数据。"""
+
+    @staticmethod
+    def build_product(**kwargs):
+        """构造带随机名称的商品数据，避免重复运行时名称冲突。"""
+
+        # ======================================
+        # 构造商品默认字段
+        # ======================================
+
+        payload = {
+            "name": f"pytest商品_{uuid.uuid4().hex[:8]}",
+            "brand": "测试品牌",
+            "model_name": "测试型号",
+            "category": "测试分类",
+            "note": "接口自动化测试商品",
+        }
+
+        # 允许用例覆盖默认字段。
+        payload.update(kwargs)
+        return payload
+
+    @staticmethod
+    def build_price(price="99.00", **kwargs):
+        """构造商品价格记录请求参数。"""
+
+        # ======================================
+        # 构造默认价格并允许覆盖其他字段
+        # ======================================
+
+        payload = {"price": price, "platform": "测试平台"}
+        payload.update(kwargs)
         return payload

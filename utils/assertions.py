@@ -1,6 +1,12 @@
 import json
 
 
+def assert_rejected(response):
+    """校验权限或参数校验拒绝了请求。"""
+    assert response.status_code in (400, 403, 404), response.text
+    assert response.json().get("code") != 200
+
+
 def assert_success(
     response,
     message="接口请求失败",

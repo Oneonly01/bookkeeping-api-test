@@ -1,8 +1,11 @@
 from datetime import datetime
+from decimal import Decimal
 import allure
 import uuid
 
 import pytest
+from common.account_api import AccountApi
+from utils.assertions import assert_rejected
 
 
 @allure.feature("账户管理")
@@ -3674,3 +3677,183 @@ class TestAccount:
                         f"account_id={account_b_id}，"
                         f"error={exc}"
                     )
+
+    @allure.story("账户权限")
+    @allure.title("其他用户不能访问我的账户")
+    def test_account_other_user_cannot_access(
+        self, account_api, test_account, another_auth_client, config
+    ):
+        """详情、修改、删除和列表均需隔离其他用户的账户。"""
+        # test_account 负责创建账户，并在用例结束后归零、删除。
+        account_id = test_account["id"]
+        other = AccountApi(another_auth_client, config.api_prefix)
+
+        assert_rejected(other.get_account_detail(account_id))
+        assert_rejected(other.update_account(account_id, {"name": "无权修改"}))
+        assert_rejected(other.delete_account(account_id))
+
+        response = other.get_account_list()
+        assert response.status_code == 200, response.text
+        assert account_id not in {item["id"] for item in response.json()["data"]}
+
+        # 用户 A 仍能查询，说明越权请求未破坏账户。
+        response = account_api.get_account_detail(account_id)
+        assert response.status_code == 200, response.text
+
+    @allure.story("转账权限")
+    @allure.title("其他用户不能查看我的转账详情")
+    def test_transfer_detail_other_user_cannot_read(
+        self, account_api, transfer_accounts, another_auth_client, config
+    ):
+        """用户 B 无法查看用户 A 两个账户之间的转账。"""
+        # transfer_accounts 创建两个账户，并负责测试后的账户清理。
+        source = transfer_accounts["source"]["id"]
+        target = transfer_accounts["target"]["id"]
+        response = account_api.create_transfer(
+            {
+                "source_account_id": source,
+                "target_account_id": target,
+                "amount": "1.00",
+                "transfer_time": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
+            }
+        )
+        assert response.status_code == 200, response.text
+        transfer_id = response.json()["data"]["id"]
+
+        try:
+            other = AccountApi(another_auth_client, config.api_prefix)
+            assert_rejected(other.get_transfer_detail(transfer_id))
+        finally:
+            # 先撤销本次转账，恢复余额，再由 fixture 删除两个账户。
+            response = account_api.delete_transfer(transfer_id)
+            assert response.status_code == 200, response.text
+
+    @allure.story("账户转账")
+    @allure.title("撤销转账后双方余额恢复")
+    def test_delete_transfer_restores_balances(
+        self, account_api, transfer_accounts
+    ):
+        """撤销一笔含手续费的转账，并验证余额和重复撤销规则。"""
+        source_id = transfer_accounts["source"]["id"]
+        target_id = transfer_accounts["target"]["id"]
+
+        # 先记录双方余额，后面与撤销后的余额比较。
+        source_before = Decimal(
+            account_api.get_account_detail(source_id).json()["data"]["balance"]
+        )
+        target_before = Decimal(
+            account_api.get_account_detail(target_id).json()["data"]["balance"]
+        )
+        response = account_api.create_transfer(
+            {
+                "source_account_id": source_id,
+                "target_account_id": target_id,
+                "amount": "100.00",
+                "fee": "2.00",
+                "transfer_time": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
+            }
+        )
+        assert response.status_code == 200, response.text
+        transfer_id = response.json()["data"]["id"]
+
+        # 转账先产生余额变化，证明后续撤销确实有内容可恢复。
+        source_after_transfer = Decimal(
+            account_api.get_account_detail(source_id).json()["data"]["balance"]
+        )
+        target_after_transfer = Decimal(
+            account_api.get_account_detail(target_id).json()["data"]["balance"]
+        )
+        assert source_after_transfer == source_before - Decimal("102.00")
+        assert target_after_transfer == target_before + Decimal("100.00")
+
+        try:
+            response = account_api.delete_transfer(transfer_id)
+            assert response.status_code == 200, response.text
+            assert response.json()["code"] == 200
+
+            source_restored = Decimal(
+                account_api.get_account_detail(source_id).json()["data"]["balance"]
+            )
+            target_restored = Decimal(
+                account_api.get_account_detail(target_id).json()["data"]["balance"]
+            )
+            assert source_restored == source_before
+            assert target_restored == target_before
+
+            # 同一笔转账只能撤销一次。
+            response = account_api.delete_transfer(transfer_id)
+            assert response.status_code in (400, 404), response.text
+        finally:
+            # 前面的断言若失败，也要尽可能撤销转账；fixture 再清理账户。
+            detail = account_api.get_transfer_detail(transfer_id)
+            if detail.status_code == 200 and detail.json()["data"]["status"] != "deleted":
+                account_api.delete_transfer(transfer_id)
+
+    @allure.story("账户管理")
+    @allure.title("创建账户时拒绝非法类型")
+    def test_create_account_invalid_type_failed(self, account_api, account_factory):
+        """账户类型只能使用后端允许的枚举值。"""
+
+        # ======================================
+        # 构造非法账户类型
+        # ======================================
+
+        payload = account_factory.build_account()
+        payload["account_type"] = "unknown_type"
+
+        # ======================================
+        # 提交请求并验证被拒绝
+        # ======================================
+
+        response = account_api.create_account(payload)
+        assert_rejected(response)
+
+    @allure.story("账户管理")
+    @allure.title("空请求不能修改账户")
+    def test_update_account_empty_payload_failed(self, account_api, test_account):
+        """空 PUT 不应产生一次没有内容的账户修改。"""
+
+        # ======================================
+        # 提交空更新数据并验证被拒绝
+        # ======================================
+
+        response = account_api.update_account(test_account["id"], {})
+        assert_rejected(response)
+
+    @allure.story("账户转账")
+    @allure.title("停用账户不能参与转账")
+    @pytest.mark.parametrize("disabled_side", ("source", "target"))
+    def test_disabled_account_transfer_failed(
+        self, account_api, transfer_accounts, disabled_side
+    ):
+        """分别检查停用转出账户和停用转入账户。"""
+
+        # ======================================
+        # 停用本轮测试的账户
+        # ======================================
+
+        disabled_id = transfer_accounts[disabled_side]["id"]
+        response = account_api.update_account(disabled_id, {"is_active": False})
+        assert response.status_code == 200, response.text
+
+        try:
+            # ======================================
+            # 构造合法转账数据并尝试转账
+            # ======================================
+            # 金额和时间均有效，避免其他字段干扰本场景。
+
+            payload = {
+                "source_account_id": transfer_accounts["source"]["id"],
+                "target_account_id": transfer_accounts["target"]["id"],
+                "amount": "1.00",
+                "transfer_time": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
+            }
+            response = account_api.create_transfer(payload)
+            assert_rejected(response)
+        finally:
+            # ======================================
+            # 恢复账户状态，供 fixture 清理
+            # ======================================
+
+            response = account_api.update_account(disabled_id, {"is_active": True})
+            assert response.status_code == 200, response.text

@@ -120,3 +120,61 @@ class CategoryApi:
         url = f"{self.api_prefix}" f"/categories/{category_id}/"
 
         return self.client.delete(url)
+
+    # ======================================
+    # 修改分类
+    # ======================================
+
+    def update_category(
+        self,
+        category_id: int,
+        data: dict,
+    ):
+        """
+        修改分类。
+
+
+        接口：
+
+        PUT /categories/{category_id}/
+
+
+        参数：
+
+        category_id:
+            分类ID。
+
+
+        data:
+
+            修改字段。
+
+
+            示例：
+
+            {
+                "name": "修改后的分类"
+            }
+
+
+        返回：
+
+        requests.Response
+
+
+        """
+
+        # ==================================
+        # 拼接接口地址
+        # ==================================
+
+        url = f"{self.api_prefix}" f"/categories/{category_id}/"
+
+        # ==================================
+        # 调用修改接口
+        # ==================================
+
+        return self.client.put(
+            url,
+            json=data,
+        )

@@ -2,6 +2,7 @@ import allure
 import pytest
 
 from common.budget_api import BudgetApi
+from utils.assertions import assert_rejected
 
 
 @allure.feature("预算管理")
@@ -3203,3 +3204,266 @@ class TestBudget:
                         "预算清理失败:",
                         e,
                     )
+
+    @allure.story("预算查询")
+    @allure.title("预算列表按年月类型分类和状态筛选")
+    def test_budget_list_filters(
+        self, budget_api, budget_factory, category_api, category_factory
+    ):
+        """创建两种预算，逐项验证列表筛选不会混入另一种预算。"""
+        # 分类预算需要一个真实的支出分类。
+        category_response = category_api.create_category(
+            category_factory.build_category()
+        )
+        assert category_response.status_code == 200, category_response.text
+        category_id = category_response.json()["data"]["id"]
+        budget_ids = []
+
+        try:
+            # 同月创建总预算和分类预算，便于检查筛选是否区分它们。
+            for payload in (
+                budget_factory.build_budget(year=2098, month=11),
+                budget_factory.build_budget(
+                    budget_type="category", year=2098, month=11,
+                    category_id=category_id,
+                ),
+            ):
+                response = budget_api.create_budget(payload)
+                assert response.status_code == 200, response.text
+                budget_ids.append(response.json()["data"]["id"])
+
+            filters = (
+                ({"year": 2098, "month": 11}, set(budget_ids)),
+                ({"budget_type": "overall"}, {budget_ids[0]}),
+                ({"budget_type": "category"}, {budget_ids[1]}),
+                ({"category_id": category_id}, {budget_ids[1]}),
+                ({"is_active": True}, set(budget_ids)),
+            )
+            for params, expected_ids in filters:
+                response = budget_api.get_budget_list(params)
+                assert response.status_code == 200, response.text
+                actual_ids = {item["id"] for item in response.json()["data"]}
+                # 必须包含预期预算，且不能包含本次创建的另一种预算。
+                assert expected_ids <= actual_ids
+                assert not (set(budget_ids) - expected_ids) & actual_ids
+        finally:
+            # 先删除预算，再删除预算所引用的分类。
+            for budget_id in budget_ids:
+                response = budget_api.delete_budget(budget_id)
+                assert response.status_code == 200, response.text
+            response = category_api.delete_category(category_id)
+            assert response.status_code == 200, response.text
+
+    @allure.story("预算统计")
+    @allure.title("查询预算执行进度成功")
+    def test_budget_progress_success(self, budget_api, budget_factory):
+        """创建未来月份预算，验证金额、剩余额度和进度字段。"""
+
+        # ======================================
+        # 创建未来月份总预算
+        # ======================================
+
+        response = budget_api.create_budget(
+            budget_factory.build_budget(year=2095, month=7, amount="1200.00")
+        )
+        assert response.status_code == 200, response.text
+        budget_id = response.json()["data"]["id"]
+
+        try:
+            # ======================================
+            # 查询预算执行进度并核对金额
+            # ======================================
+
+            response = budget_api.get_progress({"year": 2095, "month": 7})
+            assert response.status_code == 200, response.text
+            data = response.json()["data"]
+            assert data["year"] == 2095 and data["month"] == 7
+            item = next(x for x in data["budgets"] if x["budget_id"] == budget_id)
+            assert item["budget_amount"] == "1200.00"
+            assert item["spent_amount"] == "0.00"
+            assert item["remaining_amount"] == "1200.00"
+        finally:
+            # 清理本用例创建的预算。
+            response = budget_api.delete_budget(budget_id)
+            assert response.status_code == 200, response.text
+
+    @allure.story("预算统计")
+    @allure.title("查询月度预算概览成功")
+    def test_budget_overview_success(self, budget_api, budget_factory):
+        """验证概览汇总包含本次创建的总预算。"""
+
+        # ======================================
+        # 创建未来月份总预算
+        # ======================================
+
+        response = budget_api.create_budget(
+            budget_factory.build_budget(year=2095, month=8, amount="800.00")
+        )
+        assert response.status_code == 200, response.text
+        budget_id = response.json()["data"]["id"]
+
+        try:
+            # ======================================
+            # 查询预算概览并核对汇总
+            # ======================================
+
+            response = budget_api.get_overview({"year": 2095, "month": 8})
+            assert response.status_code == 200, response.text
+            data = response.json()["data"]
+            assert data["year"] == 2095 and data["month"] == 8
+            assert data["total_budget"] == "800.00"
+            assert data["total_spent"] == "0.00"
+            assert data["budget_count"] >= 1
+        finally:
+            # 清理本用例创建的预算。
+            response = budget_api.delete_budget(budget_id)
+            assert response.status_code == 200, response.text
+
+    @allure.story("预算管理")
+    @allure.title("复制月度预算成功")
+    def test_copy_monthly_budget_success(self, budget_api, budget_factory):
+        """复制来源月预算，并确认目标月金额一致。"""
+
+        # ======================================
+        # 保存来源月和目标月预算 ID
+        # ======================================
+
+        budget_ids = []
+        try:
+            # ======================================
+            # 在来源月份创建总预算
+            # ======================================
+
+            response = budget_api.create_budget(
+                budget_factory.build_budget(year=2095, month=9, amount="900.00")
+            )
+            assert response.status_code == 200, response.text
+            budget_ids.append(response.json()["data"]["id"])
+
+            # ======================================
+            # 复制到目标月份并核对结果
+            # ======================================
+
+            response = budget_api.copy_budgets(
+                {
+                    "source_year": 2095,
+                    "source_month": 9,
+                    "target_year": 2095,
+                    "target_month": 10,
+                }
+            )
+            assert response.status_code == 200, response.text
+            data = response.json()["data"]
+            budget_ids.extend(item["id"] for item in data["budgets"])
+            assert data["created_count"] == 1
+            assert data["skipped_count"] == 0
+            assert data["budgets"][0]["amount"] == "900.00"
+            assert data["budgets"][0]["month"] == 10
+        finally:
+            # ======================================
+            # 清理来源预算与复制结果
+            # ======================================
+
+            for budget_id in budget_ids:
+                response = budget_api.delete_budget(budget_id)
+                assert response.status_code == 200, response.text
+
+    @allure.story("创建预算")
+    @allure.title("总预算不能绑定分类")
+    def test_overall_budget_with_category_failed(
+        self, budget_api, budget_factory, category_api, category_factory
+    ):
+        """总预算与分类预算的分类字段规则不同。"""
+        # ======================================
+        # 创建有效支出分类
+        # ======================================
+
+        response = category_api.create_category(category_factory.build_category())
+        assert response.status_code == 200, response.text
+        category_id = response.json()["data"]["id"]
+
+        try:
+            # ======================================
+            # 总预算绑定分类并验证失败
+            # ======================================
+
+            payload = budget_factory.build_budget(category_id=category_id)
+            response = budget_api.create_budget(payload)
+            assert_rejected(response)
+        finally:
+            # 清理本用例创建的分类。
+            response = category_api.delete_category(category_id)
+            assert response.status_code == 200, response.text
+
+    @allure.story("创建预算")
+    @allure.title("收入分类不能用于支出预算")
+    def test_category_budget_income_category_failed(
+        self, budget_api, budget_factory, category_api, category_factory
+    ):
+        """分类预算只能关联支出分类。"""
+        # ======================================
+        # 创建收入分类
+        # ======================================
+
+        response = category_api.create_category(
+            category_factory.build_category(category_type="income")
+        )
+        assert response.status_code == 200, response.text
+        category_id = response.json()["data"]["id"]
+
+        try:
+            # ======================================
+            # 收入分类用于分类预算并验证失败
+            # ======================================
+
+            payload = budget_factory.build_budget(
+                budget_type="category", category_id=category_id
+            )
+            response = budget_api.create_budget(payload)
+            assert_rejected(response)
+        finally:
+            # 清理本用例创建的分类。
+            response = category_api.delete_category(category_id)
+            assert response.status_code == 200, response.text
+
+    @allure.story("预算统计")
+    @allure.title("查询进度或概览时年月必须同时提供")
+    @pytest.mark.parametrize("method_name", ("get_progress", "get_overview"))
+    @pytest.mark.parametrize("params", ({"year": 2095}, {"month": 7}))
+    def test_budget_statistics_partial_date_failed(
+        self, budget_api, method_name, params
+    ):
+        """只给年份或只给月份时，都无法确定统计区间。"""
+
+        # ======================================
+        # 根据参数选择进度或概览接口
+        # ======================================
+
+        method = getattr(budget_api, method_name)
+
+        # 只提交年份或月份，验证请求被拒绝。
+        response = method(params)
+        assert_rejected(response)
+
+    @allure.story("预算管理")
+    @allure.title("不能复制预算到同一个月份")
+    def test_copy_budget_same_month_failed(self, budget_api):
+        """来源月和目标月相同时，复制没有意义，应直接拒绝。"""
+
+        # ======================================
+        # 构造来源月和目标月相同的请求
+        # ======================================
+
+        payload = {
+            "source_year": 2095,
+            "source_month": 9,
+            "target_year": 2095,
+            "target_month": 9,
+        }
+
+        # ======================================
+        # 提交复制请求并验证失败
+        # ======================================
+
+        response = budget_api.copy_budgets(payload)
+        assert_rejected(response)

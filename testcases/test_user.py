@@ -707,52 +707,53 @@ class TestUser:
     # 修改用户信息
     # ======================================
     # ======================================
-    # 修改昵称为空失败
+    # 昵称为空时自动生成
     # ======================================
 
     @allure.story("用户信息")
-    @allure.title("修改昵称为空失败")
-    def test_update_profile_empty_nickname_failed(
+    @allure.title("修改昵称为空时自动生成昵称")
+    def test_update_profile_empty_nickname_generates_nickname(
         self,
         user_api,
     ):
         """
-        验证用户昵称为空时修改失败。
+        验证用户昵称为空时自动生成昵称。
 
 
         测试流程：
 
         1. 调用修改用户信息接口；
         2. 传入空昵称；
-        3. 验证修改失败。
+        3. 验证生成的昵称已保存。
 
 
         """
 
-        with allure.step("提交空昵称修改请求"):
+        profile_response = user_api.get_profile()
+        assert profile_response.status_code == 200
+        old_nickname = profile_response.json()["data"]["nickname"]
 
-            response = user_api.update_profile(
-                {
-                    "nickname": "",
-                }
-            )
+        try:
+            with allure.step("提交空昵称修改请求"):
+                response = user_api.update_profile({"nickname": ""})
 
-        # ==================================
-        # 状态码校验
-        # ==================================
+            assert response.status_code == 200, response.text
+            result = response.json()
+            assert result["code"] == 200
 
-        assert response.status_code in [
-            400,
-            422,
-        ]
+            generated_nickname = result["data"]["nickname"]
+            assert generated_nickname.startswith("用户")
+            assert len(generated_nickname) > len("用户")
 
-        result = response.json()
-
-        # ==================================
-        # 业务失败校验
-        # ==================================
-
-        assert result["code"] != 200
+            profile_response = user_api.get_profile()
+            assert profile_response.status_code == 200
+            assert profile_response.json()["data"]["nickname"] == generated_nickname
+        finally:
+            if old_nickname:
+                restore_response = user_api.update_profile(
+                    {"nickname": old_nickname}
+                )
+                assert restore_response.status_code == 200, restore_response.text
 
     # ======================================
     # 修改昵称长度超限失败
@@ -850,10 +851,11 @@ class TestUser:
 
         token = login_response.json()["data"]["access_token"]
 
-        auth_api.client.set_token(token)
+        user_client = RequestClient(base_url=auth_api.client.base_url)
+        user_client.set_token(token)
 
         user_api = UserApi(
-            client=auth_api.client,
+            client=user_client,
             api_prefix="/api/v1",
         )
 
@@ -937,10 +939,11 @@ class TestUser:
 
         token = response.json()["data"]["access_token"]
 
-        auth_api.client.set_token(token)
+        user_client = RequestClient(base_url=auth_api.client.base_url)
+        user_client.set_token(token)
 
         user_api = UserApi(
-            client=auth_api.client,
+            client=user_client,
             api_prefix="/api/v1",
         )
 
@@ -1015,10 +1018,11 @@ class TestUser:
 
         token = response.json()["data"]["access_token"]
 
-        auth_api.client.set_token(token)
+        user_client = RequestClient(base_url=auth_api.client.base_url)
+        user_client.set_token(token)
 
         user_api = UserApi(
-            client=auth_api.client,
+            client=user_client,
             api_prefix="/api/v1",
         )
 
@@ -1280,3 +1284,56 @@ class TestUser:
         result = response.json()
 
         assert result["code"] != 200
+
+    @allure.story("用户信息")
+    @allure.title("修改多个用户资料字段后可读回")
+    def test_update_profile_fields_readback(self, user_api, user_factory):
+        """逐项核对资料字段，并在用例结束后恢复原资料。"""
+
+        # ======================================
+        # 查询并保存修改前的用户资料
+        # ======================================
+
+        response = user_api.get_profile()
+        assert response.status_code == 200, response.text
+        old_data = response.json()["data"]
+        fields = ("email", "phone", "gender", "birthday", "currency", "timezone")
+        original = {key: old_data[key] for key in fields}
+
+        # ======================================
+        # 构造新的用户资料
+        # ======================================
+        # 邮箱和手机号使用随机值，避免与其他用户冲突。
+        # 其他字段也要与原值不同，确保真的发生修改。
+
+        changed = {
+            "email": user_factory.generate_email(),
+            "phone": user_factory.generate_phone(),
+            "gender": 1 if old_data["gender"] != 1 else 2,
+            "birthday": "2000-01-02" if old_data["birthday"] != "2000-01-02" else "2001-02-03",
+            "currency": "USD" if old_data["currency"] != "USD" else "EUR",
+            "timezone": "Asia/Tokyo" if old_data["timezone"] != "Asia/Tokyo" else "Asia/Shanghai",
+        }
+
+        try:
+            # ======================================
+            # 修改资料并查询保存结果
+            # ======================================
+
+            response = user_api.update_profile(changed)
+            assert response.status_code == 200, response.text
+
+            response = user_api.get_profile()
+            assert response.status_code == 200, response.text
+            actual = response.json()["data"]
+
+            # 逐项核对修改后的字段。
+            for key, expected in changed.items():
+                assert actual[key] == expected, key
+        finally:
+            # ======================================
+            # 恢复原资料，避免影响其他用例
+            # ======================================
+
+            response = user_api.update_profile(original)
+            assert response.status_code == 200, response.text

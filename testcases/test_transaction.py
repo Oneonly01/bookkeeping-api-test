@@ -3586,29 +3586,6 @@ class TestTransaction:
                 f"data={data}"
             )
 
-        # ======================================
-        # 查询账户详情
-        # ======================================
-        #
-        # 只有：
-        #
-        # zero_amount
-        # negative_amount
-        # category_not_found
-        #
-        # 使用的是正常测试账户。
-        #
-        # account_not_found 使用的是不存在账户，
-        # 但仍然需要确认原测试账户
-        # 没有被错误影响。
-        #
-        # ======================================
-
-        # 这里直接重新查询正常测试账户
-        # 验证余额没有发生变化。
-
-        from conftest import pytest  # noqa: F401
-
     @allure.story("新增账单")
     @allure.title("账单类型与分类类型不匹配时创建失败")
     @allure.feature("账单模块")

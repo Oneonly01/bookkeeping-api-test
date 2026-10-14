@@ -209,6 +209,15 @@ class AccountApi:
 
         return self.client.get(url)
 
+    def delete_transfer(self, transfer_id: int):
+        """撤销转账，并由后端恢复双方账户余额。"""
+
+        # 构造转账详情地址。
+        url = f"{self.api_prefix}/accounts/transfers/{transfer_id}/"
+
+        # 发送 DELETE 请求撤销转账。
+        return self.client.delete(url)
+
     # ==========================================
     # 账户统计
     # ==========================================

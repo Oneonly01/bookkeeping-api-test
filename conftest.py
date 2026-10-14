@@ -4,6 +4,9 @@ from common.account_api import AccountApi
 from common.auth_api import AuthApi
 from common.budget_api import BudgetApi
 from common.category_api import CategoryApi
+from common.dashboard_api import DashboardApi
+from common.preference_api import PreferenceApi
+from common.product_api import ProductApi
 from common.saving_api import SavingApi
 from common.user_api import UserApi
 from utils.request import RequestClient
@@ -13,6 +16,8 @@ from utils.config import Config
 from utils.data_factory import (
     AccountDataFactory,
     BudgetDataFactory,
+    CategoryDataFactory,
+    ProductDataFactory,
     SavingDataFactory,
     TagDataFactory,
     TransactionDataFactory,
@@ -1010,10 +1015,11 @@ def another_user_context(
 
     password = "Test123456"
 
-    register_payload = {
-        "username": username,
-        "password": password,
-    }
+    register_payload = UserDataFactory.build_register(
+        username=username,
+        password=password,
+        confirm_password=password,
+    )
 
     # ==========================================
     # 注册
@@ -1549,3 +1555,49 @@ def user_api(
         client=auth_client,
         api_prefix=config.api_prefix,
     )
+
+
+# ======================================
+# 分类数据工厂 fixture
+# ======================================
+
+
+@pytest.fixture
+def category_factory():
+    """
+    提供分类测试数据生成器。
+
+    测试用例中通过：
+
+        category_factory.build_category()
+
+    创建分类请求参数。
+
+
+    """
+
+    return CategoryDataFactory
+
+
+@pytest.fixture(scope="session")
+def preference_api(auth_client, config):
+    """当前已登录用户的偏好设置接口。"""
+    return PreferenceApi(auth_client, config.api_prefix)
+
+
+@pytest.fixture(scope="session")
+def dashboard_api(auth_client, config):
+    """当前已登录用户的首页汇总接口。"""
+    return DashboardApi(auth_client, config.api_prefix)
+
+
+@pytest.fixture(scope="session")
+def product_api(auth_client, config):
+    """当前已登录用户的商品接口。"""
+    return ProductApi(auth_client, config.api_prefix)
+
+
+@pytest.fixture(scope="session")
+def product_factory():
+    """商品测试数据工厂。"""
+    return ProductDataFactory

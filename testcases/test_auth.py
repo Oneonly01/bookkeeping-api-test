@@ -1,5 +1,6 @@
 import allure
 import pytest
+from utils.request import RequestClient
 
 
 @allure.feature("用户认证")
@@ -827,3 +828,103 @@ class TestAuth:
                 f"仍然获得了新的 access_token："
                 f"{refresh_response_data}"
             )
+
+    @allure.story("接口鉴权")
+    @allure.title("业务接口拒绝未登录或无效 Token")
+    @pytest.mark.parametrize(
+        "path",
+        (
+            "/accounts/",
+            "/categories/",
+            "/tags/",
+            "/budgets/",
+            "/savings/goals/",
+            "/transactions/",
+            "/users/me/",
+        ),
+    )
+    @pytest.mark.parametrize("token", (None, "invalid_token"))
+    def test_protected_endpoint_rejects_missing_or_invalid_token(
+        self, config, path, token
+    ):
+        """每个模块的受保护接口都要拒绝匿名和伪造 Token。"""
+        # 每次创建独立客户端，避免复用全局已登录 Session。
+        client = RequestClient(config.base_url, config.timeout)
+        if token:
+            client.set_token(token)
+
+        response = client.get(f"{config.api_prefix}{path}")
+        assert response.status_code in (401, 403), response.text
+
+    @allure.story("找回密码")
+    @allure.title("发送验证码校验验证码并重置密码")
+    def test_password_reset_flow_success(self, auth_api, user_factory):
+        """使用临时用户走完整找回密码流程，避免修改固定测试账号。"""
+
+        # ======================================
+        # 准备临时用户与新旧密码
+        # ======================================
+
+        user = user_factory.build_register()
+        old_password = user["password"]
+        new_password = "NewTest@123456"
+
+        # ======================================
+        # 注册临时测试用户
+        # ======================================
+        # 当前项目没有删除用户接口，因此使用唯一用户避免冲突。
+
+        response = auth_api.register(user)
+        assert response.status_code == 200, response.text
+
+        # ======================================
+        # 发送验证码并取得测试环境验证码
+        # ======================================
+
+        response = auth_api.send_password_reset_code({"account": user["username"]})
+        assert response.status_code == 200, response.text
+        assert response.json()["code"] == 200
+        code = response.json()["data"].get("debug_code")
+        assert code, "测试环境未返回 debug_code，无法完成验证码正向测试"
+
+        # ======================================
+        # 验证验证码并取得一次性重置凭证
+        # ======================================
+
+        response = auth_api.verify_password_reset_code(
+            {"account": user["username"], "code": code}
+        )
+        assert response.status_code == 200, response.text
+        reset_token = response.json()["data"]["reset_token"]
+        assert reset_token
+
+        # ======================================
+        # 使用凭证重置密码
+        # ======================================
+
+        response = auth_api.reset_password(
+            {
+                "reset_token": reset_token,
+                "new_password": new_password,
+                "confirm_password": new_password,
+            }
+        )
+        assert response.status_code == 200, response.text
+        assert response.json()["code"] == 200
+
+        # ======================================
+        # 验证新密码可登录、重置凭证不能重用
+        # ======================================
+
+        response = auth_api.login(
+            {"username": user["username"], "password": new_password}
+        )
+        assert response.status_code == 200, response.text
+        response = auth_api.reset_password(
+            {
+                "reset_token": reset_token,
+                "new_password": old_password,
+                "confirm_password": old_password,
+            }
+        )
+        assert response.status_code in (400, 404), response.text

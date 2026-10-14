@@ -84,6 +84,25 @@ class AuthApi:
             json=payload,
         )
 
+    def send_password_reset_code(self, payload):
+        """发送找回密码验证码；接口允许未登录用户访问。"""
+        # payload 包含 account，值为用户名或邮箱。
+        return self.client.post(
+            f"{self.api_prefix}/password-reset/send-code/", json=payload
+        )
+
+    def verify_password_reset_code(self, payload):
+        """校验验证码并取得一次性重置凭证。"""
+        # payload 包含 account 和用户收到的 code。
+        return self.client.post(
+            f"{self.api_prefix}/password-reset/verify-code/", json=payload
+        )
+
+    def reset_password(self, payload):
+        """使用一次性凭证设置新密码。"""
+        # payload 包含 reset_token、新密码和确认密码。
+        return self.client.post(f"{self.api_prefix}/password-reset/", json=payload)
+
     # ==========================================
     # Token 刷新
     # ==========================================
