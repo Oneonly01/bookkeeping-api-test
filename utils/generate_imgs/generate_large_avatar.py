@@ -1,68 +1,50 @@
-from PIL import Image
-import random
 import os
+from pathlib import Path
+
+from PIL import Image
 
 
 def generate_large_png():
+    """生成略大于 5 MB、且不超过 10 MB 的头像测试图片。"""
 
-    # ==================================
-    # 输出路径
-    # ==================================
+    # ======================================
+    # 确定输出路径
+    # ======================================
 
-    output_path = "E:/Project/bookkeeping_api_test/" "data/imgs/" "large_avatar.png"
+    project_dir = Path(__file__).resolve().parents[2]
+    output_path = project_dir / "data" / "imgs" / "large_avatar.png"
+    output_path.parent.mkdir(parents=True, exist_ok=True)
 
-    # ==================================
-    # 创建大尺寸图片
-    #
-    # 使用随机像素，
-    # 避免PNG压缩过度
-    #
-    # ==================================
+    # ======================================
+    # 生成随机像素
+    # ======================================
+    # RGB 图片每个像素占 3 字节。
+    # 1500 × 1500 的像素数据约为 6.4 MB。
 
-    width = 4000
-    height = 4000
+    width = 1500
+    height = 1500
+    pixel_data = os.urandom(width * height * 3)
 
-    print("正在生成图片...")
-
-    image = Image.new(
+    image = Image.frombytes(
         "RGB",
-        (
-            width,
-            height,
-        ),
+        (width, height),
+        pixel_data,
     )
 
-    pixels = []
+    # ======================================
+    # 保存并检查文件大小
+    # ======================================
 
-    for _ in range(width * height):
+    image.save(output_path, format="PNG", compress_level=0)
 
-        pixels.append(
-            (
-                random.randint(0, 255),
-                random.randint(0, 255),
-                random.randint(0, 255),
-            )
-        )
+    size_mb = output_path.stat().st_size / 1024 / 1024
 
-    image.putdata(pixels)
+    if not 5 < size_mb <= 10:
+        raise ValueError(f"图片大小不在 5～10 MB 之间：{size_mb:.2f} MB")
 
-    # ==================================
-    # 保存PNG
-    # ==================================
-
-    image.save(output_path, format="PNG")
-
-    # ==================================
-    # 查看大小
-    # ==================================
-
-    size = os.path.getsize(output_path) / 1024 / 1024
-
-    print(f"生成完成:" f"{output_path}")
-
-    print(f"文件大小:" f"{size:.2f} MB")
+    print(f"生成完成：{output_path}")
+    print(f"文件大小：{size_mb:.2f} MB")
 
 
 if __name__ == "__main__":
-
     generate_large_png()
