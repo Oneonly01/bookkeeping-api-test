@@ -848,6 +848,14 @@ class TestAuth:
         self, config, path, token
     ):
         """每个模块的受保护接口都要拒绝匿名和伪造 Token。"""
+
+        # ======================================
+        # 根据本轮参数设置 Allure 标题
+        # ======================================
+
+        auth_case = "未登录" if token is None else "无效 Token"
+        allure.dynamic.title(f"{auth_case}访问{path}被拒绝")
+
         # 每次创建独立客户端，避免复用全局已登录 Session。
         client = RequestClient(config.base_url, config.timeout)
         if token:

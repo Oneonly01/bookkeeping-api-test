@@ -1,3 +1,4 @@
+import os
 from pathlib import Path
 
 import yaml
@@ -100,7 +101,11 @@ class Config:
         获取接口基础地址。
         """
 
-        return self._config["base_url"].rstrip("/")
+        # return self._config["base_url"].rstrip("/")
+        return os.getenv(
+            "API_BASE_URL",
+            self._config["base_url"],
+        ).rstrip("/")
 
     @property
     def api_prefix(
@@ -141,10 +146,16 @@ class Config:
         获取测试账号配置。
         """
 
-        return self._config.get(
-            "test_user",
-            {},
-        )
+        # return self._config.get(
+        #     "test_user",
+        #     {},
+        # )
+        account = self._config.get("test_user", {})
+
+        return {
+            "username": os.getenv("TEST_USER_USERNAME") or account.get("username"),
+            "password": os.getenv("TEST_USER_PASSWORD") or account.get("password"),
+        }
 
     @property
     def test_user2(
@@ -160,7 +171,13 @@ class Config:
         3. 多用户业务场景测试。
         """
 
-        return self._config.get(
-            "test_user2",
-            {},
-        )
+        # return self._config.get(
+        #     "test_user2",
+        #     {},
+        # )
+        account = self._config.get("test_user2", {})
+
+        return {
+            "username": os.getenv("TEST_USER2_USERNAME") or account.get("username"),
+            "password": os.getenv("TEST_USER2_PASSWORD") or account.get("password"),
+        }

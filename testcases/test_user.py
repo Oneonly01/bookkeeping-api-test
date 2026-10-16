@@ -2,6 +2,9 @@ import allure
 
 from common.user_api import UserApi
 from utils.request import RequestClient
+from pathlib import Path
+
+IMAGE_DIR = Path(__file__).resolve().parents[1] / "data" / "imgs"
 
 
 @allure.feature("用户模块")
@@ -513,7 +516,8 @@ class TestUser:
         # 测试图片路径
         # ==================================
 
-        image_path = "E:/Project/bookkeeping_api_test/data/imgs/avatar.gif"
+        # image_path = "E:/Project/bookkeeping_api_test/data/imgs/avatar.gif"
+        image_path = IMAGE_DIR / "avatar.gif"
 
         with allure.step("打开头像文件"):
 
@@ -750,9 +754,7 @@ class TestUser:
             assert profile_response.json()["data"]["nickname"] == generated_nickname
         finally:
             if old_nickname:
-                restore_response = user_api.update_profile(
-                    {"nickname": old_nickname}
-                )
+                restore_response = user_api.update_profile({"nickname": old_nickname})
                 assert restore_response.status_code == 200, restore_response.text
 
     # ======================================
@@ -1154,7 +1156,8 @@ class TestUser:
         验证头像超过5MB上传失败。
         """
 
-        image_path = "E:/Project/bookkeeping_api_test/" "data/imgs/" "large_avatar.png"
+        # image_path = "E:/Project/bookkeeping_api_test/" "data/imgs/" "large_avatar.png"
+        image_path = IMAGE_DIR / "large_avatar.png"
 
         with allure.step("上传超过5MB头像"):
 
@@ -1257,7 +1260,8 @@ class TestUser:
 
         """
 
-        image_path = "E:/Project/bookkeeping_api_test/" "data/imgs/avatar.bmp"
+        # image_path = "E:/Project/bookkeeping_api_test/" "data/imgs/avatar.bmp"
+        image_path = IMAGE_DIR / "avatar.bmp"
 
         with allure.step("上传BMP格式图片"):
 
@@ -1310,9 +1314,15 @@ class TestUser:
             "email": user_factory.generate_email(),
             "phone": user_factory.generate_phone(),
             "gender": 1 if old_data["gender"] != 1 else 2,
-            "birthday": "2000-01-02" if old_data["birthday"] != "2000-01-02" else "2001-02-03",
+            "birthday": (
+                "2000-01-02" if old_data["birthday"] != "2000-01-02" else "2001-02-03"
+            ),
             "currency": "USD" if old_data["currency"] != "USD" else "EUR",
-            "timezone": "Asia/Tokyo" if old_data["timezone"] != "Asia/Tokyo" else "Asia/Shanghai",
+            "timezone": (
+                "Asia/Tokyo"
+                if old_data["timezone"] != "Asia/Tokyo"
+                else "Asia/Shanghai"
+            ),
         }
 
         try:
